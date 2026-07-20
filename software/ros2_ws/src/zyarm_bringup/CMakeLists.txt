@@ -9,6 +9,10 @@ if(BUILD_TESTING)
     test_x1_standard_real_ros2_control_launch
     tests/test_x1_standard_real_ros2_control_launch.py
   )
+  ament_add_pytest_test(
+    test_camera_streamer
+    tests/test_camera_streamer.py
+  )
 endif()
 
 install(
@@ -20,6 +24,12 @@ install(
   PROGRAMS scripts/standby_manager.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME standby_manager
+)
+
+install(
+  PROGRAMS scripts/camera_streamer.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME camera_streamer
 )
 
 ament_package()
