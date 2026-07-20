@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 #include "zyarm_hardware_interface/shell_protocol.hpp"
 
@@ -74,19 +75,29 @@ public:
   std::optional<StatusFrame> wait_for_status_after(
     std::chrono::steady_clock::time_point baseline,
     std::chrono::milliseconds timeout) const;
+  std::optional<AckFrame> wait_for_ack_after(
+    int command_id,
+    std::chrono::steady_clock::time_point baseline,
+    std::chrono::milliseconds timeout) const;
 
 private:
   void receive_loop();
   void update_status(const StatusFrame & frame);
+  void update_ack(const AckFrame & frame);
 
   SerialConfig config_;
   std::unique_ptr<LineIo> io_;
   std::atomic<bool> running_{false};
   std::thread rx_thread_;
+  mutable std::mutex write_mutex_;
 
   mutable std::mutex status_mutex_;
   mutable std::condition_variable status_cv_;
   std::optional<StatusFrame> latest_status_;
+
+  mutable std::mutex ack_mutex_;
+  mutable std::condition_variable ack_cv_;
+  std::unordered_map<int, AckFrame> latest_acks_;
 };
 
 }  // namespace zyarm_hardware_interface

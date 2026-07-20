@@ -17,6 +17,22 @@ TEST(ShellProtocol, FormatsCmd36WithFirmwareNumberStyle)
     "[CMD][36][0 1.235 -2 -999.900 4.200 5 6.789]\n");
 }
 
+TEST(ShellProtocol, ParsesCompletedAck)
+{
+  const auto received_at = std::chrono::steady_clock::now();
+  const auto success = parse_completed_ack(
+    "ACK_COMPLETED: CMD_ID=38, SUCCESS", received_at);
+  ASSERT_TRUE(success.has_value());
+  EXPECT_EQ(success->command_id, 38);
+  EXPECT_TRUE(success->success);
+  EXPECT_EQ(success->received_at, received_at);
+
+  const auto error = parse_completed_ack("ACK_COMPLETED: CMD_ID=38, ERROR");
+  ASSERT_TRUE(error.has_value());
+  EXPECT_FALSE(error->success);
+  EXPECT_FALSE(parse_completed_ack("ACK_RECEIVED: CMD_ID=38").has_value());
+}
+
 TEST(ShellProtocol, ParsesCompleteStatusFrame)
 {
   const auto values = parse_status_values(

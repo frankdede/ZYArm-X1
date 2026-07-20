@@ -12,6 +12,8 @@ namespace
 {
 const std::regex kStatusRegex(
   R"(\[STATUS\]\s*J0:([-\d.]+)\s*J1:([-\d.]+)\s*J2:([-\d.]+)\s*J3:([-\d.]+)\s*J4:([-\d.]+)\s*J5:([-\d.]+)\s*CLAW:([-\d.]+))");
+const std::regex kCompletedAckRegex(
+  R"(ACK_COMPLETED:\s*CMD_ID=(\d+),\s*(SUCCESS|ERROR))");
 
 std::string format_number(double value)
 {
@@ -49,6 +51,26 @@ std::string format_joint_io_fast_command(const std::array<double, kJointCount> &
   return format_command(
     kJointIoFastCommandId,
     std::vector<double>(hardware_positions.begin(), hardware_positions.end()));
+}
+
+std::optional<AckFrame> parse_completed_ack(
+  const std::string & line, std::chrono::steady_clock::time_point received_at)
+{
+  std::smatch match;
+  if (!std::regex_search(line, match, kCompletedAckRegex) || match.size() != 3) {
+    return std::nullopt;
+  }
+
+  AckFrame frame;
+  try {
+    frame.command_id = std::stoi(match[1].str());
+  } catch (const std::exception &) {
+    return std::nullopt;
+  }
+  frame.success = match[2].str() == "SUCCESS";
+  frame.received_at = received_at;
+  frame.raw_line = line;
+  return frame;
 }
 
 std::optional<std::array<double, kJointCount>> parse_status_values(const std::string & line)

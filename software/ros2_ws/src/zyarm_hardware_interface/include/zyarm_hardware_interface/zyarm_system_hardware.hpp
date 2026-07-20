@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,6 +13,7 @@
 #include "hardware_interface/types/hardware_component_interface_params.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+#include "std_srvs/srv/trigger.hpp"
 
 #include "zyarm_hardware_interface/diagnostics.hpp"
 #include "zyarm_hardware_interface/joint_mapping.hpp"
@@ -46,24 +49,31 @@ public:
   void set_transport_for_testing(std::unique_ptr<SerialTransport> transport);
   const std::array<double, kJointCount> & state_positions_for_testing() const;
   const std::array<double, kJointCount> & command_positions_for_testing() const;
+  bool standby_for_testing(std::string * message);
+  bool unload_for_testing(std::string * message);
 
 private:
   bool validate_interfaces(const hardware_interface::HardwareInfo & info) const;
   bool load_parameters(const hardware_interface::HardwareInfo & info);
   void log_stale_status_if_needed(std::chrono::steady_clock::time_point now);
+  bool execute_exclusive_command(int command_id, const std::string & name, std::string * message);
 
   std::vector<std::string> joint_names_;
   JointMapping joint_mapping_;
   SerialConfig serial_config_;
   Diagnostics diagnostics_;
   std::unique_ptr<SerialTransport> transport_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr standby_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr unload_service_;
 
   std::array<double, kJointCount> state_positions_{};
   std::array<double, kJointCount> command_positions_{};
   std::chrono::steady_clock::time_point last_consumed_status_at_{};
   std::chrono::steady_clock::time_point last_stale_log_at_{};
   bool has_state_{false};
-  bool active_{false};
+  std::atomic<bool> active_{false};
+  std::atomic<bool> exclusive_command_in_progress_{false};
+  std::chrono::milliseconds standby_timeout_{30000};
 };
 
 }  // namespace zyarm_hardware_interface

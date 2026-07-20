@@ -162,6 +162,24 @@ TEST(SerialTransport, WriteLineDoesNotWaitForStatus)
   transport.close();
 }
 
+TEST(SerialTransport, ReceivesCompletedAckOnBackgroundThread)
+{
+  auto fake_io = std::make_unique<FakeLineIo>();
+  auto * fake = fake_io.get();
+  SerialTransport transport(std::move(fake_io));
+
+  std::string error;
+  ASSERT_TRUE(transport.open(fast_config(), &error)) << error;
+  const auto baseline = std::chrono::steady_clock::now();
+  fake->push_line("ACK_COMPLETED: CMD_ID=38, SUCCESS");
+
+  const auto ack = transport.wait_for_ack_after(38, baseline, 100ms);
+  ASSERT_TRUE(ack.has_value());
+  EXPECT_TRUE(ack->success);
+  EXPECT_EQ(ack->command_id, 38);
+  transport.close();
+}
+
 TEST(SerialTransport, ReportsWriteFailureAndClosesCleanly)
 {
   auto fake_io = std::make_unique<FakeLineIo>();

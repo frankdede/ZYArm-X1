@@ -84,6 +84,9 @@ public:
       if (!status_on_write_.empty()) {
         read_lines_.push_back(status_on_write_);
       }
+      if (!ack_on_write_.empty()) {
+        read_lines_.push_back(ack_on_write_);
+      }
     }
     cv_.notify_all();
     return true;
@@ -109,6 +112,12 @@ public:
     status_on_write_ = line;
   }
 
+  void set_ack_on_write(const std::string & line)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    ack_on_write_ = line;
+  }
+
   std::vector<std::string> writes() const
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -121,6 +130,7 @@ private:
   std::deque<std::string> read_lines_;
   std::vector<std::string> writes_;
   std::string status_on_write_;
+  std::string ack_on_write_;
   bool open_{false};
   bool write_ok_{true};
 };
@@ -302,6 +312,47 @@ TEST(ZyArmSystemHardware, WriteGeneratesSingleCmd36AndDeactivateHoldsCurrentStat
 
   ASSERT_EQ(hardware.on_deactivate(lifecycle_state()), CallbackReturn::SUCCESS);
   EXPECT_EQ(hardware.command_positions_for_testing(), hardware.state_positions_for_testing());
+
+  ASSERT_EQ(hardware.on_cleanup(lifecycle_state()), CallbackReturn::SUCCESS);
+}
+
+TEST(ZyArmSystemHardware, StandbyRequiresInactiveHardwareAndWaitsForCmd38Ack)
+{
+  ZyArmSystemHardware hardware;
+  ASSERT_EQ(hardware.on_init(make_params(make_hardware_info())), CallbackReturn::SUCCESS);
+
+  FakeLineIo * fake = nullptr;
+  hardware.set_transport_for_testing(make_fake_transport(&fake));
+  fake->set_status_on_write("[STATUS] J0:0 J1:-180 J2:90 J3:0 J4:0 J5:0 CLAW:0");
+  ASSERT_EQ(hardware.on_configure(lifecycle_state()), CallbackReturn::SUCCESS);
+  ASSERT_EQ(hardware.on_activate(lifecycle_state()), CallbackReturn::SUCCESS);
+
+  std::string message;
+  EXPECT_FALSE(hardware.standby_for_testing(&message));
+  EXPECT_NE(message.find("deactivate"), std::string::npos);
+
+  ASSERT_EQ(hardware.on_deactivate(lifecycle_state()), CallbackReturn::SUCCESS);
+  fake->set_status_on_write("");
+  fake->set_ack_on_write("ACK_COMPLETED: CMD_ID=38, SUCCESS");
+  ASSERT_TRUE(hardware.standby_for_testing(&message)) << message;
+  EXPECT_EQ(fake->writes().back(), "[CMD][38]\n");
+
+  ASSERT_EQ(hardware.on_cleanup(lifecycle_state()), CallbackReturn::SUCCESS);
+}
+
+TEST(ZyArmSystemHardware, UnloadRequiresInactiveHardwareAndWaitsForCmd23Ack)
+{
+  ZyArmSystemHardware hardware;
+  ASSERT_EQ(hardware.on_init(make_params(make_hardware_info())), CallbackReturn::SUCCESS);
+
+  FakeLineIo * fake = nullptr;
+  hardware.set_transport_for_testing(make_fake_transport(&fake));
+  ASSERT_EQ(hardware.on_configure(lifecycle_state()), CallbackReturn::SUCCESS);
+  fake->set_ack_on_write("ACK_COMPLETED: CMD_ID=23, SUCCESS");
+
+  std::string message;
+  ASSERT_TRUE(hardware.unload_for_testing(&message)) << message;
+  EXPECT_EQ(fake->writes().back(), "[CMD][23]\n");
 
   ASSERT_EQ(hardware.on_cleanup(lifecycle_state()), CallbackReturn::SUCCESS);
 }

@@ -176,6 +176,19 @@ def generate_launch_description():
         ],
     )
 
+    standby_manager = Node(
+        package="zyarm_bringup",
+        executable="standby_manager",
+        name="zyarm_standby_manager",
+        output="screen",
+        parameters=[
+            {
+                "controller_manager": "/zyarm_x1_standard_controller_manager",
+                "hardware_component": "ZyarmX1StandardSystem",
+            }
+        ],
+    )
+
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -199,6 +212,7 @@ def generate_launch_description():
             robot_state_publisher,
             joint_state_broadcaster_spawner,
             delay_arm_controller_until_jsb,
+            standby_manager,
             rviz,
         ]
     )

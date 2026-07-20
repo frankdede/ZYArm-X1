@@ -91,6 +91,27 @@ ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_init(
   joint_names_ = JointMapping::expected_joint_names();
   state_positions_.fill(0.0);
   command_positions_.fill(0.0);
+  const auto node = get_node();
+  if (node != nullptr) {
+    standby_service_ = node->create_service<std_srvs::srv::Trigger>(
+      "/zyarm/standby_raw",
+      [this](
+        const std_srvs::srv::Trigger::Request::SharedPtr,
+      std_srvs::srv::Trigger::Response::SharedPtr response)
+      {
+        response->success = execute_exclusive_command(
+          kLowPowerStandbyCommandId, "CMD38 standby", &response->message);
+      });
+    unload_service_ = node->create_service<std_srvs::srv::Trigger>(
+      "/zyarm/unload_raw",
+      [this](
+        const std_srvs::srv::Trigger::Request::SharedPtr,
+        std_srvs::srv::Trigger::Response::SharedPtr response)
+      {
+        response->success = execute_exclusive_command(
+          kPowerOffCommandId, "CMD23 unload", &response->message);
+      });
+  }
   return CallbackReturn::SUCCESS;
 }
 
@@ -166,7 +187,7 @@ ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_activate(
   last_consumed_status_at_ = latest->received_at;
   diagnostics_.record_status_received();
   has_state_ = true;
-  active_ = true;
+  active_.store(true);
   return CallbackReturn::SUCCESS;
 }
 
@@ -174,14 +195,14 @@ ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_deactivate(
   const rclcpp_lifecycle::State &)
 {
   command_positions_ = state_positions_;
-  active_ = false;
+  active_.store(false);
   return CallbackReturn::SUCCESS;
 }
 
 ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_cleanup(
   const rclcpp_lifecycle::State &)
 {
-  active_ = false;
+  active_.store(false);
   has_state_ = false;
   if (transport_ != nullptr) {
     transport_->close();
@@ -202,7 +223,7 @@ hardware_interface::return_type ZyArmSystemHardware::read(
     return hardware_interface::return_type::OK;
   }
 
-  if (active_ && has_state_) {
+  if (active_.load() && has_state_) {
     diagnostics_.record_status_missed();
     log_stale_status_if_needed(now);
     if (latest.has_value() && now - latest->received_at > serial_config_.status_stale_error) {
@@ -216,7 +237,7 @@ hardware_interface::return_type ZyArmSystemHardware::read(
 hardware_interface::return_type ZyArmSystemHardware::write(
   const rclcpp::Time &, const rclcpp::Duration &)
 {
-  if (!active_) {
+  if (!active_.load()) {
     return hardware_interface::return_type::OK;
   }
   if (transport_ == nullptr || !transport_->is_open()) {
@@ -251,6 +272,58 @@ const std::array<double, kJointCount> & ZyArmSystemHardware::state_positions_for
 const std::array<double, kJointCount> & ZyArmSystemHardware::command_positions_for_testing() const
 {
   return command_positions_;
+}
+
+bool ZyArmSystemHardware::standby_for_testing(std::string * message)
+{
+  return execute_exclusive_command(kLowPowerStandbyCommandId, "CMD38 standby", message);
+}
+
+bool ZyArmSystemHardware::unload_for_testing(std::string * message)
+{
+  return execute_exclusive_command(kPowerOffCommandId, "CMD23 unload", message);
+}
+
+bool ZyArmSystemHardware::execute_exclusive_command(
+  int command_id, const std::string & name, std::string * message)
+{
+  if (active_.load()) {
+    *message = "Refusing " + name +
+      " while hardware is active; deactivate controllers and hardware first";
+    return false;
+  }
+  if (transport_ == nullptr || !transport_->is_open()) {
+    *message = "ZyArm serial transport is not open";
+    return false;
+  }
+
+  bool expected = false;
+  if (!exclusive_command_in_progress_.compare_exchange_strong(expected, true)) {
+    *message = "Another exclusive firmware command is already in progress";
+    return false;
+  }
+
+  const auto baseline = std::chrono::steady_clock::now();
+  std::string error;
+  if (!transport_->write_line(format_command(command_id, {}), &error)) {
+    exclusive_command_in_progress_.store(false);
+    *message = "Failed to send " + name + ": " + error;
+    return false;
+  }
+
+  const auto ack = transport_->wait_for_ack_after(
+    command_id, baseline, standby_timeout_);
+  exclusive_command_in_progress_.store(false);
+  if (!ack.has_value()) {
+    *message = "Timed out waiting for " + name + " completion ACK; hardware remains inactive";
+    return false;
+  }
+  if (!ack->success) {
+    *message = "Firmware reported an error while executing " + name;
+    return false;
+  }
+  *message = name + " completed";
+  return true;
 }
 
 bool ZyArmSystemHardware::validate_interfaces(const hardware_interface::HardwareInfo & info) const
@@ -296,6 +369,7 @@ bool ZyArmSystemHardware::load_parameters(const hardware_interface::HardwareInfo
     serial_config_.status_stale_warn = get_ms_param(params, "status_stale_warn_ms", 100);
     serial_config_.status_stale_error = get_ms_param(params, "status_stale_error_ms", 1000);
     serial_config_.stale_log_period = get_ms_param(params, "stale_log_period_ms", 2000);
+    standby_timeout_ = get_ms_param(params, "standby_timeout_ms", 30000);
     joint_mapping_ = JointMapping(JointMapping::config_from_parameters(params));
   } catch (const std::exception & exc) {
     RCLCPP_ERROR(get_logger(), "Invalid ZyArm hardware parameters: %s", exc.what());

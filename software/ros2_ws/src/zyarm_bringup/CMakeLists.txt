@@ -16,4 +16,10 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(
+  PROGRAMS scripts/standby_manager.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME standby_manager
+)
+
 ament_package()

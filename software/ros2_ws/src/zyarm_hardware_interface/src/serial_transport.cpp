@@ -321,6 +321,8 @@ bool SerialTransport::open(const SerialConfig & config, std::string * error)
 void SerialTransport::close()
 {
   running_.store(false);
+  status_cv_.notify_all();
+  ack_cv_.notify_all();
   if (rx_thread_.joinable()) {
     rx_thread_.join();
   }
@@ -336,6 +338,7 @@ bool SerialTransport::is_open() const
 
 bool SerialTransport::write_line(const std::string & line, std::string * error)
 {
+  std::lock_guard<std::mutex> lock(write_mutex_);
   if (io_ == nullptr) {
     if (error != nullptr) {
       *error = "serial transport has no IO backend";
@@ -343,6 +346,22 @@ bool SerialTransport::write_line(const std::string & line, std::string * error)
     return false;
   }
   return io_->write_line(line, error);
+}
+
+std::optional<AckFrame> SerialTransport::wait_for_ack_after(
+  int command_id,
+  std::chrono::steady_clock::time_point baseline,
+  std::chrono::milliseconds timeout) const
+{
+  std::unique_lock<std::mutex> lock(ack_mutex_);
+  const auto predicate = [&]() {
+      const auto iter = latest_acks_.find(command_id);
+      return iter != latest_acks_.end() && iter->second.received_at > baseline;
+    };
+  if (!ack_cv_.wait_for(lock, timeout, predicate)) {
+    return std::nullopt;
+  }
+  return latest_acks_.at(command_id);
 }
 
 std::optional<StatusFrame> SerialTransport::latest_status() const
@@ -373,11 +392,25 @@ void SerialTransport::receive_loop()
     if (!io_->read_line(line, config_.read_timeout, &error)) {
       continue;
     }
+    auto ack = parse_completed_ack(line);
+    if (ack.has_value()) {
+      update_ack(*ack);
+      continue;
+    }
     auto frame = parse_status_frame(line);
     if (frame.has_value()) {
       update_status(*frame);
     }
   }
+}
+
+void SerialTransport::update_ack(const AckFrame & frame)
+{
+  {
+    std::lock_guard<std::mutex> lock(ack_mutex_);
+    latest_acks_[frame.command_id] = frame;
+  }
+  ack_cv_.notify_all();
 }
 
 void SerialTransport::update_status(const StatusFrame & frame)
