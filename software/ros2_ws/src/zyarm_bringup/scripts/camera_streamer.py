@@ -85,7 +85,6 @@ class CameraStreamer(Node):
         self._process_lock = threading.Lock()
         self._capture_process = None
         self._last_error_at = 0.0
-        self._frame_count = 0
         self._capture_thread = threading.Thread(
             target=self._capture_loop,
             name="zyarm-native-mjpeg-capture",
@@ -198,7 +197,6 @@ class CameraStreamer(Node):
         message.format = "jpeg"
         message.data = jpeg
         self._publisher.publish(message)
-        self._frame_count += 1
 
     def destroy_node(self):
         self._stop_event.set()
