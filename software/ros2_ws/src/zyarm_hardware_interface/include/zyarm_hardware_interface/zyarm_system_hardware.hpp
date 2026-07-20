@@ -49,6 +49,7 @@ public:
   void set_transport_for_testing(std::unique_ptr<SerialTransport> transport);
   const std::array<double, kJointCount> & state_positions_for_testing() const;
   const std::array<double, kJointCount> & command_positions_for_testing() const;
+  bool reset_for_testing(std::string * message);
   bool standby_for_testing(std::string * message);
   bool unload_for_testing(std::string * message);
 
@@ -65,6 +66,7 @@ private:
   std::unique_ptr<SerialTransport> transport_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr standby_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr unload_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_service_;
 
   std::array<double, kJointCount> state_positions_{};
   std::array<double, kJointCount> command_positions_{};

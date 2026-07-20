@@ -58,6 +58,9 @@ class StandbyManager(Node):
         self._standby_raw_client = self.create_client(
             Trigger, "/zyarm/standby_raw", callback_group=self._callback_group
         )
+        self._reset_raw_client = self.create_client(
+            Trigger, "/zyarm/reset_raw", callback_group=self._callback_group
+        )
         self._unload_raw_client = self.create_client(
             Trigger, "/zyarm/unload_raw", callback_group=self._callback_group
         )
@@ -77,6 +80,12 @@ class StandbyManager(Node):
             Trigger,
             "/zyarm/standby",
             self._handle_standby,
+            callback_group=self._callback_group,
+        )
+        self._reset_service = self.create_service(
+            Trigger,
+            "/zyarm/reset",
+            self._handle_reset,
             callback_group=self._callback_group,
         )
         self._unload_service = self.create_service(
@@ -237,6 +246,63 @@ class StandbyManager(Node):
             response.success = False
             response.message = str(exc)
             self.get_logger().error(f"Standby failed: {exc}")
+        finally:
+            self._operation_lock.release()
+        return response
+
+    def _handle_reset(self, _request, response):
+        if not self._operation_lock.acquire(blocking=False):
+            response.success = False
+            response.message = "Another arm mode operation is already in progress"
+            return response
+
+        active_controllers: list[str] = []
+        hardware_inactive = False
+        raw_command_started = False
+        try:
+            if self._unloaded:
+                raise RuntimeError("Arm is unloaded; call /zyarm/resume before reset")
+
+            if self._mode == "sim":
+                response.success = True
+                response.message = "Simulated reset completed (no firmware command sent)"
+                return response
+
+            active_controllers = self._active_controllers()
+            if active_controllers:
+                self._switch(deactivate=active_controllers)
+
+            self._set_hardware_state(State.PRIMARY_STATE_INACTIVE, "inactive")
+            hardware_inactive = True
+
+            self._wait_for_client(self._reset_raw_client, "/zyarm/reset_raw")
+            raw_command_started = True
+            raw_response = self._wait_future(
+                self._reset_raw_client.call_async(Trigger.Request()),
+                self._standby_timeout,
+            )
+            if not raw_response.success:
+                raise RuntimeError(raw_response.message)
+
+            self._set_hardware_state(State.PRIMARY_STATE_ACTIVE, "active")
+            hardware_inactive = False
+            if active_controllers:
+                self._switch(activate=active_controllers)
+
+            response.success = True
+            response.message = "CMD1 reset completed and ros2_control was resynchronized"
+        except Exception as exc:
+            if not raw_command_started:
+                try:
+                    if hardware_inactive:
+                        self._set_hardware_state(State.PRIMARY_STATE_ACTIVE, "active")
+                    if active_controllers:
+                        self._switch(activate=active_controllers)
+                except Exception as recovery_exc:
+                    self.get_logger().error(f"Reset recovery failed: {recovery_exc}")
+            response.success = False
+            response.message = str(exc)
+            self.get_logger().error(f"Reset failed: {exc}")
         finally:
             self._operation_lock.release()
         return response

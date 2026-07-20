@@ -181,6 +181,8 @@ def generate_launch_description():
         executable="standby_manager",
         name="zyarm_standby_manager",
         output="screen",
+        respawn=True,
+        respawn_delay=2.0,
         parameters=[
             {
                 "controller_manager": "/zyarm_x1_standard_controller_manager",

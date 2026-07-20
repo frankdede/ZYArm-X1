@@ -93,6 +93,15 @@ ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_init(
   command_positions_.fill(0.0);
   const auto node = get_node();
   if (node != nullptr) {
+    reset_service_ = node->create_service<std_srvs::srv::Trigger>(
+      "/zyarm/reset_raw",
+      [this](
+        const std_srvs::srv::Trigger::Request::SharedPtr,
+        std_srvs::srv::Trigger::Response::SharedPtr response)
+      {
+        response->success = execute_exclusive_command(
+          kResetCommandId, "CMD1 reset", &response->message);
+      });
     standby_service_ = node->create_service<std_srvs::srv::Trigger>(
       "/zyarm/standby_raw",
       [this](
@@ -277,6 +286,11 @@ const std::array<double, kJointCount> & ZyArmSystemHardware::command_positions_f
 bool ZyArmSystemHardware::standby_for_testing(std::string * message)
 {
   return execute_exclusive_command(kLowPowerStandbyCommandId, "CMD38 standby", message);
+}
+
+bool ZyArmSystemHardware::reset_for_testing(std::string * message)
+{
+  return execute_exclusive_command(kResetCommandId, "CMD1 reset", message);
 }
 
 bool ZyArmSystemHardware::unload_for_testing(std::string * message)

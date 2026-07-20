@@ -11,6 +11,7 @@ namespace zyarm_hardware_interface
 
 inline constexpr std::size_t kJointCount = 7;
 inline constexpr std::size_t kArmJointCount = 6;
+inline constexpr int kResetCommandId = 1;
 inline constexpr int kPowerOffCommandId = 23;
 inline constexpr int kJointIoFastCommandId = 36;
 inline constexpr int kLowPowerStandbyCommandId = 38;

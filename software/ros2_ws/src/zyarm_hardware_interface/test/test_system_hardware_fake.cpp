@@ -357,4 +357,21 @@ TEST(ZyArmSystemHardware, UnloadRequiresInactiveHardwareAndWaitsForCmd23Ack)
   ASSERT_EQ(hardware.on_cleanup(lifecycle_state()), CallbackReturn::SUCCESS);
 }
 
+TEST(ZyArmSystemHardware, ResetRequiresInactiveHardwareAndWaitsForCmd1Ack)
+{
+  ZyArmSystemHardware hardware;
+  ASSERT_EQ(hardware.on_init(make_params(make_hardware_info())), CallbackReturn::SUCCESS);
+
+  FakeLineIo * fake = nullptr;
+  hardware.set_transport_for_testing(make_fake_transport(&fake));
+  ASSERT_EQ(hardware.on_configure(lifecycle_state()), CallbackReturn::SUCCESS);
+  fake->set_ack_on_write("ACK_COMPLETED: CMD_ID=1, SUCCESS");
+
+  std::string message;
+  ASSERT_TRUE(hardware.reset_for_testing(&message)) << message;
+  EXPECT_EQ(fake->writes().back(), "[CMD][1]\n");
+
+  ASSERT_EQ(hardware.on_cleanup(lifecycle_state()), CallbackReturn::SUCCESS);
+}
+
 }  // namespace zyarm_hardware_interface

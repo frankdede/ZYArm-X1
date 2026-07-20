@@ -79,6 +79,7 @@ joint_state_broadcaster
 
 | 服务 | 真机行为 | 最终控制状态 |
 | --- | --- | --- |
+| `/zyarm/reset` | 停控制器、暂停硬件循环、发送 `CMD1`、恢复原控制器 | active |
 | `/zyarm/standby` | 停控制器、暂停硬件循环、发送 `CMD38`、读取当前位置并恢复 | active |
 | `/zyarm/unload` | 停控制器、暂停硬件循环并发送 `CMD23` | inactive，关节卸力 |
 | `/zyarm/resume` | 激活硬件、从当前位置同步 command 并恢复原控制器 | active |
@@ -91,7 +92,7 @@ joint_state_broadcaster
 
 点击 Call 前仍要按真机安全条件确认。尤其是 `/zyarm/unload`，必须先扶稳机械臂；`/zyarm/resume` 前必须放稳机械臂、手已离开且工作区无人。
 
-硬件插件内部的 `/zyarm/standby_raw` 和 `/zyarm/unload_raw` 只负责在串口唯一所有者中发送固件命令并等待完成 ACK，外部操作应调用上表中的托管服务。
+硬件插件内部的 `/zyarm/reset_raw`、`/zyarm/standby_raw` 和 `/zyarm/unload_raw` 只负责在串口唯一所有者中发送固件命令并等待完成 ACK，外部操作应调用上表中的托管服务。`CMD1 reset` 可能触发固件动作，执行前应像其他运动命令一样确认机械臂姿态和工作区。
 
 已验证的 unload/resume 状态变化：
 
