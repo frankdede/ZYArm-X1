@@ -15,10 +15,8 @@ def generate_launch_description():
         DeclareLaunchArgument("frame_id", default_value="camera_link"),
         DeclareLaunchArgument("width", default_value="640"),
         DeclareLaunchArgument("height", default_value="480"),
-        DeclareLaunchArgument("fps", default_value="15.0"),
+        DeclareLaunchArgument("fps", default_value="30.0"),
         DeclareLaunchArgument("fourcc", default_value="MJPG"),
-        DeclareLaunchArgument("jpeg_quality", default_value="80"),
-        DeclareLaunchArgument("synthetic", default_value="false"),
     ]
 
     camera = Node(
@@ -35,12 +33,6 @@ def generate_launch_description():
                 "height": ParameterValue(LaunchConfiguration("height"), value_type=int),
                 "fps": ParameterValue(LaunchConfiguration("fps"), value_type=float),
                 "fourcc": LaunchConfiguration("fourcc"),
-                "jpeg_quality": ParameterValue(
-                    LaunchConfiguration("jpeg_quality"), value_type=int
-                ),
-                "synthetic": ParameterValue(
-                    LaunchConfiguration("synthetic"), value_type=bool
-                ),
             }
         ],
     )
