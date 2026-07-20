@@ -63,6 +63,7 @@ Serial API 是底层协议，Python SDK、C++ SDK、官方 Web、ROS 2 和 LeRob
 - [C++](Cpp/README.md)：通过 C++ SDK 控制机械臂。
 - [Web](Web/README.md)：官方 Web 控制台、URDF 显示、串口连接和网页仿真。
 - [ROS2](ROS2/README.md)：ROS 2、ros2_control、MoveIt、Gazebo 和真机桥接。
+- [Foxglove/ROS 2 联调记录](02_Foxglove与ROS2控制链路.md)：已验证的模式服务、3D、真机和摄像头链路。
 
 ## 路线选择
 
@@ -73,6 +74,7 @@ Serial API 是底层协议，Python SDK、C++ SDK、官方 Web、ROS 2 和 LeRob
 | 写 C++ 控制程序或做系统集成 | [C++](Cpp/README.md) |
 | 使用官方 Web 做网页可视化和交互控制 | [Web](Web/README.md) |
 | 做 ROS 2 控制和 MoveIt 规划 | [ROS2](ROS2/README.md) |
+| 使用 Foxglove 查看模型、状态和摄像头 | [Foxglove/ROS 2 联调记录](02_Foxglove与ROS2控制链路.md) |
 | 做 Gazebo 仿真 | [ROS2](ROS2/README.md) -> Gazebo |
 | 做 LeRobot 数据采集 | [科研与数据采集](../07_科研与数据采集/README.md) |
 | 修改源码或扩展能力 | [开发者指南](../09_开发者指南/README.md) |
