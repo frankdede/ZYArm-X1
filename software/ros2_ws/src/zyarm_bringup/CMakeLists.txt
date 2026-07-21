@@ -48,4 +48,10 @@ install(
   RENAME stack_probe
 )
 
+install(
+  PROGRAMS scripts/install_stack_service.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME install_stack_service
+)
+
 ament_package()

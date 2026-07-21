@@ -2,7 +2,17 @@
 
 ## 一键管理真机、Foxglove 和摄像头
 
-安装 `zyarm-stack.service` 后使用：
+先构建 workspace，然后使用 venv 安装 service、Python 依赖和 CLI wrapper：
+
+```bash
+source /home/frank/venv/bin/activate
+python3 software/ros2_ws/src/zyarm_bringup/scripts/install_stack_service.py \
+  --venv /home/frank/venv
+```
+
+installer 只向指定 venv 安装 `venv-requirements.txt` 中的依赖，不修改系统 Python。它会写入 `/etc/default/zyarm-stack`，systemd 和 `/usr/local/bin/zyarm-stack` 都固定使用同一 venv。
+
+安装后使用：
 
 ```bash
 zyarm-stack status

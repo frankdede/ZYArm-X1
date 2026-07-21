@@ -50,6 +50,25 @@ def test_systemd_unit_supervises_the_complete_stack():
     assert "Requires=foxglove-bridge.service" in unit
     assert "KillMode=control-group" in unit
     assert "Restart=no" in unit
+    assert "EnvironmentFile=-/etc/default/zyarm-stack" in unit
+    assert r'export VIRTUAL_ENV=\"$ZYARM_VENV\"' in unit
+    assert r'export PATH=\"$ZYARM_VENV/bin:$PATH\"' in unit
+    assert r'\"$ZYARM_VENV/bin/python3\"' in unit
+
+
+def test_service_installer_configures_venv_unit_and_wrapper():
+    package = Path(__file__).parents[1]
+    installer = (package / "scripts/install_stack_service.py").read_text(
+        encoding="utf-8"
+    )
+    requirements = (package / "config/venv-requirements.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "/etc/default/zyarm-stack" in installer
+    assert "/usr/local/bin/zyarm-stack" in installer
+    assert '"-m", "pip", "install"' in installer
+    assert "PyYAML" in requirements
 
 
 def test_fallback_parameters_are_sent_as_typed_empty_string_arrays(monkeypatch):
@@ -106,6 +125,7 @@ def test_stack_probe_uses_one_persistent_ros_process():
     )
 
     assert "stack_probe" in source
+    assert 'VENV_PYTHON = VENV_ROOT / "bin/python3"' in source
     assert "ThreadPoolExecutor" not in source
     assert "ros2 service info" not in source
     assert "print_status" not in getsource(module.start_stack)

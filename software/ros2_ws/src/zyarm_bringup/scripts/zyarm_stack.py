@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -21,6 +22,8 @@ STACK_PROBE = Path(
     "/home/frank/ZYArm-X1/software/ros2_ws/install/zyarm_bringup/"
     "lib/zyarm_bringup/stack_probe"
 )
+VENV_ROOT = Path(os.environ.get("ZYARM_VENV", "/home/frank/venv"))
+VENV_PYTHON = VENV_ROOT / "bin/python3"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -65,7 +68,13 @@ def sudo_systemctl(*arguments: str) -> None:
 def validate_start_prerequisites() -> None:
     missing = [
         str(path)
-        for path in (ROS_SETUP, WORKSPACE_SETUP, SERIAL_DEVICE, CAMERA_DEVICE)
+        for path in (
+            ROS_SETUP,
+            WORKSPACE_SETUP,
+            VENV_PYTHON,
+            SERIAL_DEVICE,
+            CAMERA_DEVICE,
+        )
         if not path.exists()
     ]
     if missing:
@@ -101,7 +110,7 @@ def query_stack_interfaces(
     timeout: int = 8,
 ) -> tuple[subprocess.CompletedProcess, bool, bool, bool, bool]:
     probe = ros_command(
-        f"python3 {STACK_PROBE} --timeout {max(timeout, 1)}",
+        f"{VENV_PYTHON} {STACK_PROBE} --timeout {max(timeout, 1)}",
         timeout=max(timeout, 1) + 3,
     )
     try:

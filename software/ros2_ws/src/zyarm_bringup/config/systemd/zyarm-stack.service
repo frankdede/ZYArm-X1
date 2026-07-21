@@ -8,11 +8,14 @@ Requires=foxglove-bridge.service
 Type=simple
 User=frank
 WorkingDirectory=/home/frank/ZYArm-X1/software/ros2_ws
+Environment=ZYARM_VENV=/home/frank/venv
+EnvironmentFile=-/etc/default/zyarm-stack
 Environment=ROS_LOCALHOST_ONLY=0
 Environment=PYTHONUNBUFFERED=1
+ExecStartPre=/bin/bash -c "test -x \"$ZYARM_VENV/bin/python3\""
 ExecStartPre=/usr/bin/test -e /dev/ttyUSB0
 ExecStartPre=/usr/bin/test -e /dev/v4l/by-id/usb-XHH-260128-A_2M-video-index0
-ExecStart=/bin/bash -lc "source /opt/ros/jazzy/setup.bash && source /home/frank/ZYArm-X1/software/ros2_ws/install/setup.bash && exec /home/frank/ZYArm-X1/software/ros2_ws/install/zyarm_bringup/lib/zyarm_bringup/zyarm_stack --systemd-daemon"
+ExecStart=/bin/bash -c "source /opt/ros/jazzy/setup.bash; source /home/frank/ZYArm-X1/software/ros2_ws/install/setup.bash; export VIRTUAL_ENV=\"$ZYARM_VENV\"; export PATH=\"$ZYARM_VENV/bin:$PATH\"; exec \"$ZYARM_VENV/bin/python3\" /home/frank/ZYArm-X1/software/ros2_ws/install/zyarm_bringup/lib/zyarm_bringup/zyarm_stack --systemd-daemon"
 KillMode=control-group
 KillSignal=SIGINT
 TimeoutStopSec=20
