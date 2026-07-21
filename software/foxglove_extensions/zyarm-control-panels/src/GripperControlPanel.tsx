@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 const COMMAND_TOPIC = "/gripper_controller/joint_trajectory";
 const COMMAND_SCHEMA = "trajectory_msgs/msg/JointTrajectory";
 const JOINT_STATE_TOPIC = "/joint_states";
-const CLAW_TRAVEL_MM = 34;
+const GRIPPER_MAX_TRAVEL_MM = 34;
 
 type JointStateMessage = {
   name?: readonly string[];
@@ -32,7 +32,7 @@ function palette(colorScheme: "dark" | "light") {
       };
 }
 
-function ClawControlPanel({ context }: { context: PanelExtensionContext }): ReactElement {
+function GripperControlPanel({ context }: { context: PanelExtensionContext }): ReactElement {
   const [targetMm, setTargetMm] = useState(0);
   const [durationSec, setDurationSec] = useState(1);
   const [currentMm, setCurrentMm] = useState<number | undefined>();
@@ -86,7 +86,7 @@ function ClawControlPanel({ context }: { context: PanelExtensionContext }): Reac
       return;
     }
 
-    const safeTargetMm = Math.min(CLAW_TRAVEL_MM, Math.max(0, targetMm));
+    const safeTargetMm = Math.min(GRIPPER_MAX_TRAVEL_MM, Math.max(0, targetMm));
     const safeDurationSec = Math.min(10, Math.max(0.2, durationSec));
     const seconds = Math.floor(safeDurationSec);
     const nanoseconds = Math.round((safeDurationSec - seconds) * 1_000_000_000);
@@ -129,7 +129,7 @@ function ClawControlPanel({ context }: { context: PanelExtensionContext }): Reac
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 650 }}>Claw control</h2>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 650 }}>Gripper Control</h2>
         <span style={{ color: colors.muted, fontSize: 13 }}>
           {currentMm == undefined ? "--" : `${currentMm.toFixed(1)} mm`}
         </span>
@@ -141,10 +141,10 @@ function ClawControlPanel({ context }: { context: PanelExtensionContext }): Reac
           <strong>{targetMm.toFixed(1)} mm</strong>
         </div>
         <input
-          aria-label="Claw target"
+          aria-label="Gripper target"
           type="range"
           min={0}
-          max={CLAW_TRAVEL_MM}
+          max={GRIPPER_MAX_TRAVEL_MM}
           step={0.5}
           value={targetMm}
           onChange={(event) => {
@@ -168,7 +168,7 @@ function ClawControlPanel({ context }: { context: PanelExtensionContext }): Reac
           type="button"
           style={buttonStyle}
           onClick={() => {
-            setTargetMm(CLAW_TRAVEL_MM);
+            setTargetMm(GRIPPER_MAX_TRAVEL_MM);
           }}
         >
           Open
@@ -233,9 +233,9 @@ function ClawControlPanel({ context }: { context: PanelExtensionContext }): Reac
   );
 }
 
-export function initClawControlPanel(context: PanelExtensionContext): () => void {
+export function initGripperControlPanel(context: PanelExtensionContext): () => void {
   const root = createRoot(context.panelElement);
-  root.render(<ClawControlPanel context={context} />);
+  root.render(<GripperControlPanel context={context} />);
   return () => {
     root.unmount();
   };

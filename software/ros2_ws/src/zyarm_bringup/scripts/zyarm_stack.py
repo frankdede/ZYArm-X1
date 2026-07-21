@@ -24,6 +24,7 @@ STACK_PROBE = Path(
 )
 VENV_ROOT = Path(os.environ.get("ZYARM_VENV", "/home/frank/venv"))
 VENV_PYTHON = VENV_ROOT / "bin/python3"
+MOTOR_TEMPERATURE_COUNT = 9
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -108,7 +109,7 @@ def service_state(service: str) -> str:
 
 def query_stack_interfaces(
     timeout: int = 8,
-) -> tuple[subprocess.CompletedProcess, bool, bool, bool, bool]:
+) -> tuple[subprocess.CompletedProcess, bool, bool, bool, bool, int]:
     probe = ros_command(
         f"{VENV_PYTHON} {STACK_PROBE} --timeout {max(timeout, 1)}",
         timeout=max(timeout, 1) + 3,
@@ -130,12 +131,14 @@ def query_stack_interfaces(
     controllers_active = bool(payload.get("controllers_active", False))
     modes_ready = bool(payload.get("services_ready", False))
     video_ready = bool(payload.get("video_ready", False))
+    temperature_topic_count = int(payload.get("temperature_topic_count", 0))
     return (
         controllers,
         controllers_available,
         controllers_active,
         modes_ready,
         video_ready,
+        temperature_topic_count,
     )
 
 
@@ -151,6 +154,7 @@ def print_status() -> int:
         print("controllers: unavailable")
         print("mode services: unavailable")
         print("video: unavailable")
+        print(f"motor temperatures: unavailable (0/{MOTOR_TEMPERATURE_COUNT})")
         return 1
 
     (
@@ -159,6 +163,7 @@ def print_status() -> int:
         controllers_active,
         modes_ready,
         video_ready,
+        temperature_topic_count,
     ) = query_stack_interfaces()
     print("controllers:")
     print(controllers.stdout.strip() or "unavailable")
@@ -174,7 +179,15 @@ def print_status() -> int:
         if video_ready
         else "video: unavailable"
     )
-    ready = controllers_available and modes_ready and video_ready
+    temperature_topics_ready = temperature_topic_count == MOTOR_TEMPERATURE_COUNT
+    temperature_state = "available" if temperature_topics_ready else "unavailable"
+    print(
+        f"motor temperatures: {temperature_state} "
+        f"({temperature_topic_count}/{MOTOR_TEMPERATURE_COUNT})"
+    )
+    ready = (
+        controllers_available and modes_ready and video_ready and temperature_topics_ready
+    )
     return 0 if ready and bridge_state == "active" else 1
 
 
@@ -197,13 +210,17 @@ def wait_until_ready(timeout: float = 30.0) -> None:
         _,
         modes_ready,
         video_ready,
+        temperature_topic_count,
     ) = query_stack_interfaces(timeout=remaining)
-    if controllers_available and modes_ready and video_ready:
+    temperature_topics_ready = temperature_topic_count == MOTOR_TEMPERATURE_COUNT
+    if controllers_available and modes_ready and video_ready and temperature_topics_ready:
         return
     raise RuntimeError(
         "ZYArm ROS interfaces did not become ready; "
         f"controllers={controllers_available}, mode_services={modes_ready}, "
-        f"video={video_ready}, probe={controllers.stdout.strip() or 'no output'}"
+        f"video={video_ready}, motor_temperatures="
+        f"{temperature_topic_count}/{MOTOR_TEMPERATURE_COUNT}, "
+        f"probe={controllers.stdout.strip() or 'no output'}"
     )
 
 
@@ -236,7 +253,10 @@ def start_stack() -> int:
     sudo_systemctl("start", BRIDGE_SERVICE)
     sudo_systemctl("start", STACK_SERVICE)
     try:
-        print("Waiting for controllers, mode services, and video...", flush=True)
+        print(
+            "Waiting for controllers, mode services, video, and motor temperatures...",
+            flush=True,
+        )
         wait_until_ready()
         initialize_fallback_parameters()
     except RuntimeError:
@@ -258,7 +278,10 @@ def restart_stack() -> int:
     sudo_systemctl("restart", BRIDGE_SERVICE)
     sudo_systemctl("restart", STACK_SERVICE)
     try:
-        print("Waiting for controllers, mode services, and video...", flush=True)
+        print(
+            "Waiting for controllers, mode services, video, and motor temperatures...",
+            flush=True,
+        )
         wait_until_ready()
         initialize_fallback_parameters()
     except RuntimeError:

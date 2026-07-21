@@ -23,6 +23,9 @@ EXPECTED_SERVICES = {
     "/zyarm/reset",
 }
 VIDEO_TOPIC = "/camera/image/compressed"
+MOTOR_TEMPERATURE_TOPICS = {
+    f"/zyarm/motors/servo_{servo_id}/temperature" for servo_id in range(1, 10)
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +48,7 @@ def main(argv=None) -> int:
     controller_states: dict[str, str] = {}
     services_ready = False
     video_ready = False
+    temperature_topic_count = 0
 
     try:
         while rclpy.ok() and time.monotonic() < deadline:
@@ -70,11 +74,20 @@ def main(argv=None) -> int:
             topic_names = {name for name, _types in node.get_topic_names_and_types()}
             services_ready = EXPECTED_SERVICES.issubset(service_names)
             video_ready = VIDEO_TOPIC in topic_names
+            temperature_topic_count = len(MOTOR_TEMPERATURE_TOPICS & topic_names)
+            temperature_topics_ready = (
+                temperature_topic_count == len(MOTOR_TEMPERATURE_TOPICS)
+            )
             controllers_ready = all(
                 controller_states.get(name) in {"active", "inactive"}
                 for name in EXPECTED_CONTROLLERS
             )
-            if controllers_ready and services_ready and video_ready:
+            if (
+                controllers_ready
+                and services_ready
+                and video_ready
+                and temperature_topics_ready
+            ):
                 break
 
         controllers_ready = all(
@@ -91,9 +104,19 @@ def main(argv=None) -> int:
             ),
             "services_ready": services_ready,
             "video_ready": video_ready,
+            "temperature_topic_count": temperature_topic_count,
+            "temperature_topics_ready": temperature_topic_count
+            == len(MOTOR_TEMPERATURE_TOPICS),
         }
         print(json.dumps(result, sort_keys=True))
-        return 0 if controllers_ready and services_ready and video_ready else 1
+        return (
+            0
+            if controllers_ready
+            and services_ready
+            and video_ready
+            and result["temperature_topics_ready"]
+            else 1
+        )
     finally:
         node.destroy_node()
         if rclpy.ok():

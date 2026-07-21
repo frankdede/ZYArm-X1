@@ -1,7 +1,7 @@
 {
   "name": "zyarm-control-panels",
   "displayName": "ZYArm Control Panels",
-  "description": "Motor temperature telemetry and guarded claw control for ZYArm-X1.",
+  "description": "Motor temperature telemetry and guarded gripper control for ZYArm-X1.",
   "publisher": "ZYAI-Robot",
   "version": "0.1.0",
   "license": "Apache-2.0",

@@ -69,6 +69,7 @@ def test_service_installer_configures_venv_unit_and_wrapper():
     assert "/usr/local/bin/zyarm-stack" in installer
     assert '"-m", "pip", "install"' in installer
     assert "PyYAML" in requirements
+    assert "pytest==9.1.1" in requirements
 
 
 def test_fallback_parameters_are_sent_as_typed_empty_string_arrays(monkeypatch):
@@ -105,17 +106,39 @@ def test_recovery_ready_inactive_controllers_are_accepted(monkeypatch):
                 "controllers_active": False,
                 "services_ready": True,
                 "video_ready": True,
+                "temperature_topic_count": 9,
             }
         )
         return CompletedProcess(args=command, returncode=0, stdout=output)
 
     monkeypatch.setattr(module, "ros_command", fake_ros_command)
-    _, available, active, modes, video = module.query_stack_interfaces()
+    _, available, active, modes, video, temperature_count = module.query_stack_interfaces()
 
     assert available
     assert not active
     assert modes
     assert video
+    assert temperature_count == 9
+
+
+def test_status_reports_all_motor_temperature_topics(monkeypatch, capsys):
+    module = _load_module()
+    monkeypatch.setattr(module, "service_state", lambda _service: "active")
+    monkeypatch.setattr(
+        module,
+        "query_stack_interfaces",
+        lambda: (
+            CompletedProcess(args=[], returncode=0, stdout="gripper_controller: active"),
+            True,
+            True,
+            True,
+            True,
+            9,
+        ),
+    )
+
+    assert module.print_status() == 0
+    assert "motor temperatures: available (9/9)" in capsys.readouterr().out
 
 
 def test_stack_probe_uses_one_persistent_ros_process():
@@ -159,6 +182,7 @@ def test_wait_until_ready_polls_systemd_before_ros(monkeypatch):
             False,
             True,
             True,
+            9,
         ),
     )
 
