@@ -3,6 +3,12 @@ zyarm_x1_standard_controller_manager:
     # 真机 CMD36 路径首版默认 50Hz，和 mock/Gazebo 配置解耦。
     update_rate: 50
 
+    # Keep serial ownership and recovery services available when firmware is
+    # in standby. CMD1 activation is an explicit operator action.
+    hardware_components_initial_state:
+      inactive:
+        - ZyarmX1StandardSystem
+
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 

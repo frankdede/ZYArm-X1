@@ -150,6 +150,7 @@ def generate_launch_description():
             "joint_state_broadcaster",
             "--controller-manager",
             "/zyarm_x1_standard_controller_manager",
+            "--inactive",
         ],
     )
 
@@ -162,6 +163,7 @@ def generate_launch_description():
             "arm_controller",
             "--controller-manager",
             "/zyarm_x1_standard_controller_manager",
+            "--inactive",
         ],
     )
 
@@ -174,6 +176,7 @@ def generate_launch_description():
             "gripper_controller",
             "--controller-manager",
             "/zyarm_x1_standard_controller_manager",
+            "--inactive",
         ],
     )
 
@@ -186,6 +189,11 @@ def generate_launch_description():
             {
                 "controller_manager": "/zyarm_x1_standard_controller_manager",
                 "hardware_component": "ZyarmX1StandardSystem",
+                "managed_controllers": [
+                    "joint_state_broadcaster",
+                    "arm_controller",
+                    "gripper_controller",
+                ],
             }
         ],
     )

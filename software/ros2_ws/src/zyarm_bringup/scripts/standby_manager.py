@@ -7,7 +7,12 @@ from typing import Iterable
 
 import rclpy
 from control_msgs.action import FollowJointTrajectory
-from controller_manager_msgs.srv import ListControllers, SetHardwareComponentState, SwitchController
+from controller_manager_msgs.srv import (
+    ListControllers,
+    ListHardwareComponents,
+    SetHardwareComponentState,
+    SwitchController,
+)
 from lifecycle_msgs.msg import State
 from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -24,6 +29,10 @@ class StandbyManager(Node):
             "controller_manager", "/zyarm_x1_standard_controller_manager"
         )
         self.declare_parameter("hardware_component", "ZyarmX1StandardSystem")
+        self.declare_parameter(
+            "managed_controllers",
+            ["joint_state_broadcaster", "arm_controller", "gripper_controller"],
+        )
         self.declare_parameter("mode", "real")
         self.declare_parameter("service_timeout_sec", 5.0)
         self.declare_parameter("standby_timeout_sec", 35.0)
@@ -31,6 +40,9 @@ class StandbyManager(Node):
 
         manager = str(self.get_parameter("controller_manager").value).rstrip("/")
         self._hardware_component = str(self.get_parameter("hardware_component").value)
+        self._managed_controllers = list(
+            self.get_parameter("managed_controllers").value
+        )
         self._mode = str(self.get_parameter("mode").value).strip().lower()
         self._service_timeout = float(self.get_parameter("service_timeout_sec").value)
         self._standby_timeout = float(self.get_parameter("standby_timeout_sec").value)
@@ -53,6 +65,11 @@ class StandbyManager(Node):
         self._hardware_client = self.create_client(
             SetHardwareComponentState,
             f"{manager}/set_hardware_component_state",
+            callback_group=self._callback_group,
+        )
+        self._list_hardware_client = self.create_client(
+            ListHardwareComponents,
+            f"{manager}/list_hardware_components",
             callback_group=self._callback_group,
         )
         self._standby_raw_client = self.create_client(
@@ -127,6 +144,26 @@ class StandbyManager(Node):
             self._list_client, ListControllers.Request(), "list_controllers"
         )
         return [controller.name for controller in response.controller if controller.state == "active"]
+
+    def _inactive_managed_controllers(self) -> list[str]:
+        response = self._call(
+            self._list_client, ListControllers.Request(), "list_controllers"
+        )
+        states = {controller.name: controller.state for controller in response.controller}
+        return [
+            name for name in self._managed_controllers if states.get(name) == "inactive"
+        ]
+
+    def _hardware_state(self) -> int:
+        response = self._call(
+            self._list_hardware_client,
+            ListHardwareComponents.Request(),
+            "list_hardware_components",
+        )
+        for component in response.component:
+            if component.name == self._hardware_component:
+                return component.state.id
+        raise RuntimeError(f"Hardware component not found: {self._hardware_component}")
 
     def _switch(self, *, activate: Iterable[str] = (), deactivate: Iterable[str] = ()) -> None:
         request = SwitchController.Request()
@@ -257,7 +294,9 @@ class StandbyManager(Node):
             return response
 
         active_controllers: list[str] = []
+        controllers_to_activate: list[str] = []
         hardware_inactive = False
+        hardware_was_active = False
         raw_command_started = False
         try:
             if self._unloaded:
@@ -269,10 +308,16 @@ class StandbyManager(Node):
                 return response
 
             active_controllers = self._active_controllers()
+            controllers_to_activate = (
+                active_controllers or self._inactive_managed_controllers()
+            )
             if active_controllers:
                 self._switch(deactivate=active_controllers)
 
-            self._set_hardware_state(State.PRIMARY_STATE_INACTIVE, "inactive")
+            hardware_state = self._hardware_state()
+            hardware_was_active = hardware_state == State.PRIMARY_STATE_ACTIVE
+            if hardware_state != State.PRIMARY_STATE_INACTIVE:
+                self._set_hardware_state(State.PRIMARY_STATE_INACTIVE, "inactive")
             hardware_inactive = True
 
             self._wait_for_client(self._reset_raw_client, "/zyarm/reset_raw")
@@ -286,15 +331,15 @@ class StandbyManager(Node):
 
             self._set_hardware_state(State.PRIMARY_STATE_ACTIVE, "active")
             hardware_inactive = False
-            if active_controllers:
-                self._switch(activate=active_controllers)
+            if controllers_to_activate:
+                self._switch(activate=controllers_to_activate)
 
             response.success = True
             response.message = "CMD1 reset completed and ros2_control was resynchronized"
         except Exception as exc:
             if not raw_command_started:
                 try:
-                    if hardware_inactive:
+                    if hardware_inactive and hardware_was_active:
                         self._set_hardware_state(State.PRIMARY_STATE_ACTIVE, "active")
                     if active_controllers:
                         self._switch(activate=active_controllers)
@@ -407,9 +452,13 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
-        executor.shutdown()
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            executor.shutdown()
+            node.destroy_node()
+        except KeyboardInterrupt:
+            pass
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

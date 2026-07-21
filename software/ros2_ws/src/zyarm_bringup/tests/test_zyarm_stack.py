@@ -67,3 +67,40 @@ def test_fallback_parameters_are_sent_as_typed_empty_string_arrays(monkeypatch):
 
     assert "type: 9" in seen[0][0]
     assert seen[0][0].count("string_array_value: []") == 3
+
+
+def test_recovery_ready_inactive_controllers_are_accepted(monkeypatch):
+    module = _load_module()
+
+    def fake_ros_command(command, timeout):
+        if "list_controllers" in command:
+            output = "\n".join(
+                [
+                    "arm_controller joint_trajectory_controller/JointTrajectoryController inactive",
+                    "gripper_controller joint_trajectory_controller/JointTrajectoryController inactive",
+                    "joint_state_broadcaster joint_state_broadcaster/JointStateBroadcaster inactive",
+                ]
+            )
+        else:
+            output = "/camera/image/compressed\n" if "topic list" in command else "ok\n"
+        return CompletedProcess(args=command, returncode=0, stdout=output)
+
+    monkeypatch.setattr(module, "ros_command", fake_ros_command)
+    _, available, active, modes, video = module.query_stack_interfaces()
+
+    assert available
+    assert not active
+    assert modes
+    assert video
+
+
+def test_real_controller_config_starts_hardware_inactive():
+    config = (
+        Path(__file__).parents[2]
+        / "zyarm_control"
+        / "config"
+        / "zyarm_x1_standard_real_controllers.yaml"
+    ).read_text(encoding="utf-8")
+
+    assert "hardware_components_initial_state:" in config
+    assert "ZyarmX1StandardSystem" in config

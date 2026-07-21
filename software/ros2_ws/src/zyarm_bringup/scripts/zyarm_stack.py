@@ -94,7 +94,7 @@ def service_state(service: str) -> str:
 
 def query_stack_interfaces(
     timeout: int = 8,
-) -> tuple[subprocess.CompletedProcess, bool, bool, bool]:
+) -> tuple[subprocess.CompletedProcess, bool, bool, bool, bool]:
     controllers = ros_command(
         "ros2 control list_controllers -c /zyarm_x1_standard_controller_manager",
         timeout=timeout,
@@ -104,12 +104,17 @@ def query_stack_interfaces(
         "gripper_controller",
         "joint_state_broadcaster",
     )
-    controllers_ready = controllers.returncode == 0 and all(
-        any(
-            line.startswith(name) and line.rstrip().endswith("active")
-            for line in controllers.stdout.splitlines()
-        )
+    controller_states = {
+        line.split()[0]: line.split()[-1]
+        for line in controllers.stdout.splitlines()
+        if len(line.split()) >= 2
+    }
+    controllers_available = controllers.returncode == 0 and all(
+        controller_states.get(name) in {"active", "inactive"}
         for name in expected_controllers
+    )
+    controllers_active = controllers_available and all(
+        controller_states.get(name) == "active" for name in expected_controllers
     )
     topics = ros_command(
         "ros2 topic list | grep -E '^/camera/image/compressed$'",
@@ -123,7 +128,13 @@ def query_stack_interfaces(
         timeout=timeout,
     )
     modes_ready = modes.returncode == 0
-    return controllers, controllers_ready, modes_ready, video_ready
+    return (
+        controllers,
+        controllers_available,
+        controllers_active,
+        modes_ready,
+        video_ready,
+    )
 
 
 def print_status() -> int:
@@ -140,16 +151,28 @@ def print_status() -> int:
         print("video: unavailable")
         return 1
 
-    controllers, controllers_ready, modes_ready, video_ready = query_stack_interfaces()
+    (
+        controllers,
+        controllers_available,
+        controllers_active,
+        modes_ready,
+        video_ready,
+    ) = query_stack_interfaces()
     print("controllers:")
     print(controllers.stdout.strip() or "unavailable")
+    if controllers_active:
+        print("control state: active")
+    elif controllers_available:
+        print("control state: recovery-ready (call /zyarm/reset to activate)")
+    else:
+        print("control state: incomplete")
     print("mode services: available" if modes_ready else "mode services: unavailable")
     print(
         "video: available (/camera/image/compressed)"
         if video_ready
         else "video: unavailable"
     )
-    ready = controllers_ready and modes_ready and video_ready
+    ready = controllers_available and modes_ready and video_ready
     return 0 if ready and bridge_state == "active" else 1
 
 
@@ -159,10 +182,14 @@ def wait_until_ready(timeout: float = 30.0) -> None:
         if service_state(STACK_SERVICE) != "active":
             time.sleep(0.5)
             continue
-        _, controllers_ready, modes_ready, video_ready = query_stack_interfaces(
-            timeout=4
-        )
-        if controllers_ready and modes_ready and video_ready:
+        (
+            _,
+            controllers_available,
+            _,
+            modes_ready,
+            video_ready,
+        ) = query_stack_interfaces(timeout=4)
+        if controllers_available and modes_ready and video_ready:
             return
         time.sleep(0.5)
     raise RuntimeError("ZYArm stack did not become ready within 30 seconds")

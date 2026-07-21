@@ -13,6 +13,10 @@ zyarm-stack stop --confirm-safe
 
 `start`、`stop` 和 `restart` 必须显式提供 `--confirm-safe`。启动前需要支撑机械臂、清空工作区并确认人员已离开。该 service 默认不启用开机自启动；Foxglove Bridge 继续由现有 `foxglove-bridge.service` 管理。
 
+真机启动采用两阶段流程。`zyarm-stack start --confirm-safe` 会打开串口、启动 Foxglove、模式服务和摄像头，但硬件与 controller 保持 `inactive`，因此即使固件已经处于 standby，`/zyarm/reset` 仍然可用。确认机械臂已放稳、工作区无人后，在 Foxglove 调用 `std_srvs/srv/Trigger` 类型的 `/zyarm/reset`；CMD1 完成、当前位置同步成功后，硬件和三个 controller 才会变为 `active`。
+
+`zyarm-stack status` 显示 `recovery-ready` 表示服务均已上线、正在等待显式 reset；显示 `active` 才能接收轨迹。`/zyarm/resume` 只恢复同一次运行中由 `/zyarm/unload` 停掉的 controller，不用于退出固件 standby。
+
 当前保留的入口：
 
 - `bringup_x1_standard_ros2_control.launch.py`
