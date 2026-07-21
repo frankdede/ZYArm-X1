@@ -14,6 +14,7 @@ const std::regex kStatusRegex(
   R"(\[STATUS\]\s*J0:([-\d.]+)\s*J1:([-\d.]+)\s*J2:([-\d.]+)\s*J3:([-\d.]+)\s*J4:([-\d.]+)\s*J5:([-\d.]+)\s*CLAW:([-\d.]+))");
 const std::regex kCompletedAckRegex(
   R"(ACK_COMPLETED:\s*CMD_ID=(\d+),\s*(SUCCESS|ERROR))");
+const std::regex kServoTemperatureFieldRegex(R"(S(\d+):([-+]?\d+(?:\.\d+)?))");
 
 std::string format_number(double value)
 {
@@ -106,6 +107,46 @@ std::optional<StatusFrame> parse_status_frame(
   StatusFrame frame;
   frame.hardware_positions = *values;
   frame.received_at = received_at;
+  frame.raw_line = line;
+  return frame;
+}
+
+std::optional<ServoTemperatureFrame> parse_servo_temperature_line(
+  const std::string & line,
+  std::uint64_t sequence,
+  std::chrono::steady_clock::time_point received_at)
+{
+  constexpr const char * marker = "[SERVO_TEMP]";
+  const auto marker_index = line.find(marker);
+  if (marker_index == std::string::npos) {
+    return std::nullopt;
+  }
+
+  const auto payload = line.substr(marker_index + std::char_traits<char>::length(marker));
+  std::map<int, double> temperatures;
+  for (
+    auto iter = std::sregex_iterator(
+      payload.begin(), payload.end(), kServoTemperatureFieldRegex);
+    iter != std::sregex_iterator(); ++iter)
+  {
+    try {
+      const int servo_id = std::stoi((*iter)[1].str());
+      const double temperature_c = std::stod((*iter)[2].str());
+      if (servo_id > 0) {
+        temperatures[servo_id] = temperature_c;
+      }
+    } catch (const std::exception &) {
+      return std::nullopt;
+    }
+  }
+  if (temperatures.empty()) {
+    return std::nullopt;
+  }
+
+  ServoTemperatureFrame frame;
+  frame.temperatures_c = std::move(temperatures);
+  frame.received_at = received_at;
+  frame.sequence = sequence;
   frame.raw_line = line;
   return frame;
 }

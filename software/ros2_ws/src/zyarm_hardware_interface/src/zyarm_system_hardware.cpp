@@ -2,12 +2,15 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
+#include "diagnostic_msgs/msg/diagnostic_status.hpp"
+#include "diagnostic_msgs/msg/key_value.hpp"
 #include "pluginlib/class_list_macros.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "zyarm_hardware_interface/shell_protocol.hpp"
@@ -39,6 +42,18 @@ int get_int_param(
     return fallback;
   }
   return std::stoi(iter->second);
+}
+
+double get_double_param(
+  const std::unordered_map<std::string, std::string> & params,
+  const std::string & key,
+  double fallback)
+{
+  auto iter = params.find(key);
+  if (iter == params.end() || iter->second.empty()) {
+    return fallback;
+  }
+  return std::stod(iter->second);
 }
 
 bool get_bool_param(
@@ -120,6 +135,18 @@ ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_init(
         response->success = execute_exclusive_command(
           kPowerOffCommandId, "CMD23 unload", &response->message);
       });
+
+    temperature_publishers_.reserve(kServoCount);
+    for (std::size_t index = 0; index < kServoCount; ++index) {
+      temperature_publishers_.push_back(
+        node->create_publisher<sensor_msgs::msg::Temperature>(
+          "/zyarm/motors/servo_" + std::to_string(index + 1) + "/temperature",
+          rclcpp::SensorDataQoS()));
+    }
+    temperature_diagnostics_publisher_ =
+      node->create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/diagnostics", 10);
+    temperature_timer_ = node->create_wall_timer(
+      std::chrono::milliseconds(250), [this]() {poll_temperature_telemetry();});
   }
   return CallbackReturn::SUCCESS;
 }
@@ -158,6 +185,10 @@ ZyArmSystemHardware::CallbackReturn ZyArmSystemHardware::on_configure(
     RCLCPP_ERROR(get_logger(), "Failed to open ZyArm serial transport: %s", error.c_str());
     return CallbackReturn::ERROR;
   }
+  last_temperature_query_at_ = {};
+  const auto latest_temperatures = transport_->latest_servo_temperatures();
+  last_published_temperature_sequence_ =
+    latest_temperatures.has_value() ? latest_temperatures->sequence : 0;
   return CallbackReturn::SUCCESS;
 }
 
@@ -384,12 +415,114 @@ bool ZyArmSystemHardware::load_parameters(const hardware_interface::HardwareInfo
     serial_config_.status_stale_error = get_ms_param(params, "status_stale_error_ms", 1000);
     serial_config_.stale_log_period = get_ms_param(params, "stale_log_period_ms", 2000);
     standby_timeout_ = get_ms_param(params, "standby_timeout_ms", 30000);
+    temperature_query_interval_ = get_ms_param(
+      params, "temperature_query_interval_ms", 10000);
+    temperature_warn_c_ = get_double_param(params, "temperature_warn_c", 60.0);
+    temperature_error_c_ = get_double_param(params, "temperature_error_c", 70.0);
+    if (temperature_query_interval_.count() <= 0) {
+      throw std::invalid_argument("temperature_query_interval_ms must be positive");
+    }
+    if (!std::isfinite(temperature_warn_c_) || !std::isfinite(temperature_error_c_) ||
+      temperature_warn_c_ >= temperature_error_c_)
+    {
+      throw std::invalid_argument(
+              "temperature_warn_c must be lower than temperature_error_c");
+    }
     joint_mapping_ = JointMapping(JointMapping::config_from_parameters(params));
   } catch (const std::exception & exc) {
     RCLCPP_ERROR(get_logger(), "Invalid ZyArm hardware parameters: %s", exc.what());
     return false;
   }
   return true;
+}
+
+void ZyArmSystemHardware::poll_temperature_telemetry()
+{
+  if (transport_ == nullptr || !transport_->is_open()) {
+    return;
+  }
+
+  const auto latest = transport_->latest_servo_temperatures();
+  if (latest.has_value() && latest->sequence > last_published_temperature_sequence_) {
+    publish_temperature_telemetry(*latest);
+    last_published_temperature_sequence_ = latest->sequence;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  if (exclusive_command_in_progress_.load() ||
+    (last_temperature_query_at_.time_since_epoch().count() != 0 &&
+    now - last_temperature_query_at_ < temperature_query_interval_))
+  {
+    return;
+  }
+
+  last_temperature_query_at_ = now;
+  std::string error;
+  if (!transport_->write_line(format_command(kStatusCommandId, {1.0}), &error)) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 5000,
+      "Failed to query ZYArm servo temperatures: %s", error.c_str());
+  }
+}
+
+void ZyArmSystemHardware::publish_temperature_telemetry(
+  const ServoTemperatureFrame & frame)
+{
+  const auto node = get_node();
+  if (node == nullptr || temperature_diagnostics_publisher_ == nullptr) {
+    return;
+  }
+
+  const auto stamp = node->now();
+  diagnostic_msgs::msg::DiagnosticArray diagnostics;
+  diagnostics.header.stamp = stamp;
+  diagnostics.status.reserve(kServoCount);
+
+  for (std::size_t index = 0; index < kServoCount; ++index) {
+    const int servo_id = static_cast<int>(index + 1);
+    const auto reading = frame.temperatures_c.find(servo_id);
+
+    diagnostic_msgs::msg::DiagnosticStatus status;
+    status.name = "ZYArm motor temperature/S" + std::to_string(servo_id);
+    status.hardware_id = "zyarm_servo_" + std::to_string(servo_id);
+    diagnostic_msgs::msg::KeyValue servo_id_value;
+    servo_id_value.key = "servo_id";
+    servo_id_value.value = std::to_string(servo_id);
+    status.values.push_back(std::move(servo_id_value));
+
+    if (reading == frame.temperatures_c.end()) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::STALE;
+      status.message = "No reading in latest temperature frame";
+      diagnostics.status.push_back(std::move(status));
+      continue;
+    }
+
+    const double temperature_c = reading->second;
+    sensor_msgs::msg::Temperature message;
+    message.header.stamp = stamp;
+    message.header.frame_id = "servo_" + std::to_string(servo_id);
+    message.temperature = temperature_c;
+    message.variance = 0.0;
+    temperature_publishers_[index]->publish(message);
+
+    diagnostic_msgs::msg::KeyValue temperature_value;
+    temperature_value.key = "temperature_c";
+    temperature_value.value = std::to_string(temperature_c);
+    status.values.push_back(std::move(temperature_value));
+    if (temperature_c >= temperature_error_c_) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
+      status.message = "Temperature limit exceeded";
+    } else if (temperature_c >= temperature_warn_c_) {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      status.message = "Temperature warning";
+    } else {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
+      status.message = "OK";
+    }
+    diagnostics.status.push_back(std::move(status));
+  }
+
+  temperature_diagnostics_publisher_->publish(diagnostics);
 }
 
 void ZyArmSystemHardware::log_stale_status_if_needed(std::chrono::steady_clock::time_point now)

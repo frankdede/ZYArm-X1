@@ -180,6 +180,29 @@ TEST(SerialTransport, ReceivesCompletedAckOnBackgroundThread)
   transport.close();
 }
 
+TEST(SerialTransport, ReceivesAndSequencesServoTemperatures)
+{
+  auto fake_io = std::make_unique<FakeLineIo>();
+  auto * fake = fake_io.get();
+  SerialTransport transport(std::move(fake_io));
+
+  std::string error;
+  ASSERT_TRUE(transport.open(fast_config(), &error)) << error;
+  fake->push_line("[SERVO_TEMP] S1:32 S2:30 S9:29");
+
+  const auto first = transport.wait_for_servo_temperatures_after(0, 100ms);
+  ASSERT_TRUE(first.has_value());
+  EXPECT_EQ(first->sequence, 1u);
+  EXPECT_DOUBLE_EQ(first->temperatures_c.at(1), 32.0);
+
+  fake->push_line("[SERVO_TEMP] S1:33 S2:31 S9:30");
+  const auto second = transport.wait_for_servo_temperatures_after(first->sequence, 100ms);
+  ASSERT_TRUE(second.has_value());
+  EXPECT_EQ(second->sequence, 2u);
+  EXPECT_DOUBLE_EQ(second->temperatures_c.at(9), 30.0);
+  transport.close();
+}
+
 TEST(SerialTransport, ReportsWriteFailureAndClosesCleanly)
 {
   auto fake_io = std::make_unique<FakeLineIo>();

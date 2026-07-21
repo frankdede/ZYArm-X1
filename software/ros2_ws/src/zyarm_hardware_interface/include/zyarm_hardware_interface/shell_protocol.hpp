@@ -2,6 +2,8 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -11,6 +13,8 @@ namespace zyarm_hardware_interface
 
 inline constexpr std::size_t kJointCount = 7;
 inline constexpr std::size_t kArmJointCount = 6;
+inline constexpr std::size_t kServoCount = 9;
+inline constexpr int kStatusCommandId = 6;
 inline constexpr int kResetCommandId = 1;
 inline constexpr int kPowerOffCommandId = 23;
 inline constexpr int kJointIoFastCommandId = 36;
@@ -32,6 +36,14 @@ struct StatusFrame
   std::string raw_line;
 };
 
+struct ServoTemperatureFrame
+{
+  std::map<int, double> temperatures_c;
+  std::chrono::steady_clock::time_point received_at{};
+  std::uint64_t sequence{0};
+  std::string raw_line;
+};
+
 std::string format_command(int command_id, const std::vector<double> & params);
 std::string format_joint_io_fast_command(const std::array<double, kJointCount> & hardware_positions);
 std::optional<AckFrame> parse_completed_ack(
@@ -40,6 +52,10 @@ std::optional<AckFrame> parse_completed_ack(
 std::optional<std::array<double, kJointCount>> parse_status_values(const std::string & line);
 std::optional<StatusFrame> parse_status_frame(
   const std::string & line,
+  std::chrono::steady_clock::time_point received_at = std::chrono::steady_clock::now());
+std::optional<ServoTemperatureFrame> parse_servo_temperature_line(
+  const std::string & line,
+  std::uint64_t sequence = 0,
   std::chrono::steady_clock::time_point received_at = std::chrono::steady_clock::now());
 
 }  // namespace zyarm_hardware_interface

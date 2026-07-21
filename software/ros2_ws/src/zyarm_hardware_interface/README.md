@@ -4,7 +4,8 @@
 `hardware_interface::SystemInterface`，由 `ros2_control_node` 加载，并在控制循环中直接
 通过串口发送固件 `CMD36`。
 
-这个包只负责一件事：把真实机械臂翻译成 ros2_control 的 position-only 关节接口。
+这个包负责把真实机械臂翻译成 ros2_control 的 position-only 关节接口，并从同一个串口
+低频采集舵机温度诊断数据。
 
 ## 与现有路径的边界
 
@@ -38,6 +39,24 @@
 - `on_activate()` 不 reset 机械臂。
 - `on_deactivate()` 保持当前位置命令。
 - `on_deactivate()` 不默认发送 reset 或 stop。
+
+## 舵机温度
+
+硬件插件默认每 10 秒发送一次固件 `[CMD][6][1]`，解析同一帧中的 S1 到 S9。该查询由
+串口唯一 owner 完成，不会创建第二个串口连接，也不会阻塞 50Hz 控制循环。温度在硬件
+configured 但 controller inactive 时仍会发布。
+
+每个舵机使用标准 `sensor_msgs/msg/Temperature`：
+
+```text
+/zyarm/motors/servo_1/temperature
+...
+/zyarm/motors/servo_9/temperature
+```
+
+同一轮读数也会写入 `/diagnostics`。默认低于 60 C 为 OK，60 C 起为 WARN，70 C 起为
+ERROR；缺少某个 S1..S9 字段时对应诊断为 STALE。该 telemetry 用于监控和保护判断，
+不替代固件自身的过温保护。
 
 ## 首次运行
 

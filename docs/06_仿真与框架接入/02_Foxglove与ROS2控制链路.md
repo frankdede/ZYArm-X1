@@ -24,6 +24,7 @@
 
 ```text
 ros2_control -> /joint_states -> robot_state_publisher -> /tf
+motor sensors -> /zyarm/motors/servo_N/temperature + /diagnostics
 URDF ---------------------------------------------> /robot_description
 USB camera -> V4L2 native MJPEG -> /camera/image/compressed
 ROS 2 topics/services -> foxglove_bridge -> ws://192.168.68.107:8765
@@ -43,6 +44,36 @@ Display mode: Visual
 ```text
 /camera/image/compressed
 ```
+
+## 电机温度和夹爪面板
+
+真机硬件插件通过官方低频 `CMD6 verbose` 查询一次取得 S1 到 S9 的温度。每路温度都是
+`sensor_msgs/msg/Temperature`：
+
+```text
+/zyarm/motors/servo_1/temperature
+...
+/zyarm/motors/servo_9/temperature
+```
+
+采样间隔默认 10 秒，`/diagnostics` 使用 60 C warning 和 70 C error 阈值。2026-07-20
+真机联调已同时读到 9 路数据，范围为 32 C 到 43 C。
+
+Foxglove 扩展源码位于：
+
+```text
+software/foxglove_extensions/zyarm-control-panels
+```
+
+在运行 Foxglove Desktop 的机器上执行 `npm install && npm run local-install`，Reload
+Foxglove 后可以添加：
+
+- `ZYArm Motor Temperatures`：S1 到 S9 温度网格和最高温度。
+- `ZYArm Claw Control`：显示 `joint6` 当前位置，设置 `0..34 mm` 目标和执行时长。
+
+夹爪面板的 Open 和 Close 只改变目标值；必须启用 `Enable control` 并点击 `Send target`
+才会向 `/gripper_controller/joint_trajectory` 发布轨迹。`gripper_controller` 必须处于
+active 才会执行。Foxglove 不是急停系统，真机发送前仍需确认夹爪周围无人、无障碍物。
 
 ## 仿真和真机控制
 

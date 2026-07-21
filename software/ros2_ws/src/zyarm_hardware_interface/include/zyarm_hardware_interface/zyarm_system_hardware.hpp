@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,7 +13,9 @@
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_component_interface_params.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
+#include "diagnostic_msgs/msg/diagnostic_array.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+#include "sensor_msgs/msg/temperature.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
 #include "zyarm_hardware_interface/diagnostics.hpp"
@@ -57,6 +60,8 @@ private:
   bool validate_interfaces(const hardware_interface::HardwareInfo & info) const;
   bool load_parameters(const hardware_interface::HardwareInfo & info);
   void log_stale_status_if_needed(std::chrono::steady_clock::time_point now);
+  void poll_temperature_telemetry();
+  void publish_temperature_telemetry(const ServoTemperatureFrame & frame);
   bool execute_exclusive_command(int command_id, const std::string & name, std::string * message);
 
   std::vector<std::string> joint_names_;
@@ -67,15 +72,25 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr standby_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr unload_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_service_;
+  std::vector<rclcpp::Publisher<sensor_msgs::msg::Temperature>::SharedPtr>
+  temperature_publishers_;
+  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr
+  temperature_diagnostics_publisher_;
+  rclcpp::TimerBase::SharedPtr temperature_timer_;
 
   std::array<double, kJointCount> state_positions_{};
   std::array<double, kJointCount> command_positions_{};
   std::chrono::steady_clock::time_point last_consumed_status_at_{};
   std::chrono::steady_clock::time_point last_stale_log_at_{};
+  std::chrono::steady_clock::time_point last_temperature_query_at_{};
+  std::uint64_t last_published_temperature_sequence_{0};
   bool has_state_{false};
   std::atomic<bool> active_{false};
   std::atomic<bool> exclusive_command_in_progress_{false};
   std::chrono::milliseconds standby_timeout_{30000};
+  std::chrono::milliseconds temperature_query_interval_{10000};
+  double temperature_warn_c_{60.0};
+  double temperature_error_c_{70.0};
 };
 
 }  // namespace zyarm_hardware_interface

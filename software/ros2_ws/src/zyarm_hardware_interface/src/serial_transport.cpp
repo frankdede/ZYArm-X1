@@ -323,6 +323,7 @@ void SerialTransport::close()
   running_.store(false);
   status_cv_.notify_all();
   ack_cv_.notify_all();
+  servo_temperature_cv_.notify_all();
   if (rx_thread_.joinable()) {
     rx_thread_.join();
   }
@@ -384,6 +385,26 @@ std::optional<StatusFrame> SerialTransport::wait_for_status_after(
   return latest_status_;
 }
 
+std::optional<ServoTemperatureFrame> SerialTransport::latest_servo_temperatures() const
+{
+  std::lock_guard<std::mutex> lock(servo_temperature_mutex_);
+  return latest_servo_temperatures_;
+}
+
+std::optional<ServoTemperatureFrame> SerialTransport::wait_for_servo_temperatures_after(
+  std::uint64_t sequence, std::chrono::milliseconds timeout) const
+{
+  std::unique_lock<std::mutex> lock(servo_temperature_mutex_);
+  const auto predicate = [&]() {
+      return latest_servo_temperatures_.has_value() &&
+             latest_servo_temperatures_->sequence > sequence;
+    };
+  if (!servo_temperature_cv_.wait_for(lock, timeout, predicate)) {
+    return std::nullopt;
+  }
+  return latest_servo_temperatures_;
+}
+
 void SerialTransport::receive_loop()
 {
   while (running_.load()) {
@@ -400,6 +421,11 @@ void SerialTransport::receive_loop()
     auto frame = parse_status_frame(line);
     if (frame.has_value()) {
       update_status(*frame);
+      continue;
+    }
+    auto servo_temperatures = parse_servo_temperature_line(line);
+    if (servo_temperatures.has_value()) {
+      update_servo_temperatures(*servo_temperatures);
     }
   }
 }
@@ -420,6 +446,16 @@ void SerialTransport::update_status(const StatusFrame & frame)
     latest_status_ = frame;
   }
   status_cv_.notify_all();
+}
+
+void SerialTransport::update_servo_temperatures(const ServoTemperatureFrame & frame)
+{
+  {
+    std::lock_guard<std::mutex> lock(servo_temperature_mutex_);
+    latest_servo_temperatures_ = frame;
+    latest_servo_temperatures_->sequence = ++servo_temperature_sequence_;
+  }
+  servo_temperature_cv_.notify_all();
 }
 
 }  // namespace zyarm_hardware_interface

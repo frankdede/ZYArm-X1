@@ -70,4 +70,21 @@ TEST(ShellProtocol, RejectsMalformedOrIncompleteStatusLines)
     parse_status_values("[STATUS] J0:1.2.3 J1:2 J2:3 J3:4 J4:5 J5:6 CLAW:7").has_value());
 }
 
+TEST(ShellProtocol, ParsesAllServoTemperatures)
+{
+  const auto frame = parse_servo_temperature_line(
+    "ACK_RESPONSE: CMD_ID=6, [SERVO_TEMP] "
+    "S1:32 S2:30.5 S3:29 S4:28 S5:27 S6:29 S7:29 S8:29 S9:30",
+    7);
+
+  ASSERT_TRUE(frame.has_value());
+  EXPECT_EQ(frame->sequence, 7u);
+  ASSERT_EQ(frame->temperatures_c.size(), kServoCount);
+  EXPECT_DOUBLE_EQ(frame->temperatures_c.at(1), 32.0);
+  EXPECT_DOUBLE_EQ(frame->temperatures_c.at(2), 30.5);
+  EXPECT_DOUBLE_EQ(frame->temperatures_c.at(9), 30.0);
+  EXPECT_FALSE(parse_servo_temperature_line("[SERVO_TEMP] no readings").has_value());
+  EXPECT_FALSE(parse_servo_temperature_line("[STATUS] J0:1").has_value());
+}
+
 }  // namespace zyarm_hardware_interface

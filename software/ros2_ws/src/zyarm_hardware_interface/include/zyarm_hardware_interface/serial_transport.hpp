@@ -79,11 +79,15 @@ public:
     int command_id,
     std::chrono::steady_clock::time_point baseline,
     std::chrono::milliseconds timeout) const;
+  std::optional<ServoTemperatureFrame> latest_servo_temperatures() const;
+  std::optional<ServoTemperatureFrame> wait_for_servo_temperatures_after(
+    std::uint64_t sequence, std::chrono::milliseconds timeout) const;
 
 private:
   void receive_loop();
   void update_status(const StatusFrame & frame);
   void update_ack(const AckFrame & frame);
+  void update_servo_temperatures(const ServoTemperatureFrame & frame);
 
   SerialConfig config_;
   std::unique_ptr<LineIo> io_;
@@ -98,6 +102,11 @@ private:
   mutable std::mutex ack_mutex_;
   mutable std::condition_variable ack_cv_;
   std::unordered_map<int, AckFrame> latest_acks_;
+
+  mutable std::mutex servo_temperature_mutex_;
+  mutable std::condition_variable servo_temperature_cv_;
+  std::optional<ServoTemperatureFrame> latest_servo_temperatures_;
+  std::uint64_t servo_temperature_sequence_{0};
 };
 
 }  // namespace zyarm_hardware_interface
