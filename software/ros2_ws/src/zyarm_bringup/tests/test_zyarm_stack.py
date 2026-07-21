@@ -44,4 +44,4 @@ def test_systemd_unit_supervises_the_complete_stack():
 
     assert "Requires=foxglove-bridge.service" in unit
     assert "KillMode=control-group" in unit
-    assert "Restart=on-failure" in unit
+    assert "Restart=no" in unit

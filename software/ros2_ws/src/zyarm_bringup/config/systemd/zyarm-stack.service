@@ -16,8 +16,7 @@ ExecStart=/bin/bash -lc "source /opt/ros/jazzy/setup.bash && source /home/frank/
 KillMode=control-group
 KillSignal=SIGINT
 TimeoutStopSec=20
-Restart=on-failure
-RestartSec=3
+Restart=no
 
 [Install]
 WantedBy=multi-user.target

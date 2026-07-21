@@ -92,7 +92,9 @@ def service_state(service: str) -> str:
     return result.stdout.strip() or "unknown"
 
 
-def query_stack_interfaces(timeout: int = 8) -> tuple[subprocess.CompletedProcess, bool]:
+def query_stack_interfaces(
+    timeout: int = 8,
+) -> tuple[subprocess.CompletedProcess, bool, bool, bool]:
     controllers = ros_command(
         "ros2 control list_controllers -c /zyarm_x1_standard_controller_manager",
         timeout=timeout,
@@ -114,7 +116,14 @@ def query_stack_interfaces(timeout: int = 8) -> tuple[subprocess.CompletedProces
         timeout=timeout,
     )
     video_ready = topics.returncode == 0 and bool(topics.stdout.strip())
-    return controllers, controllers_ready and video_ready
+    modes = ros_command(
+        "for service in standby unload resume reset; do "
+        "ros2 service info /zyarm/$service | grep -q 'Services count: 1' || exit 1; "
+        "done",
+        timeout=timeout,
+    )
+    modes_ready = modes.returncode == 0
+    return controllers, controllers_ready, modes_ready, video_ready
 
 
 def print_status() -> int:
@@ -127,18 +136,21 @@ def print_status() -> int:
 
     if stack_state != "active":
         print("controllers: unavailable")
+        print("mode services: unavailable")
         print("video: unavailable")
         return 1
 
-    controllers, interfaces_ready = query_stack_interfaces()
+    controllers, controllers_ready, modes_ready, video_ready = query_stack_interfaces()
     print("controllers:")
     print(controllers.stdout.strip() or "unavailable")
+    print("mode services: available" if modes_ready else "mode services: unavailable")
     print(
         "video: available (/camera/image/compressed)"
-        if interfaces_ready
+        if video_ready
         else "video: unavailable"
     )
-    return 0 if interfaces_ready and bridge_state == "active" else 1
+    ready = controllers_ready and modes_ready and video_ready
+    return 0 if ready and bridge_state == "active" else 1
 
 
 def wait_until_ready(timeout: float = 30.0) -> None:
@@ -147,8 +159,10 @@ def wait_until_ready(timeout: float = 30.0) -> None:
         if service_state(STACK_SERVICE) != "active":
             time.sleep(0.5)
             continue
-        _, ready = query_stack_interfaces(timeout=4)
-        if ready:
+        _, controllers_ready, modes_ready, video_ready = query_stack_interfaces(
+            timeout=4
+        )
+        if controllers_ready and modes_ready and video_ready:
             return
         time.sleep(0.5)
     raise RuntimeError("ZYArm stack did not become ready within 30 seconds")
@@ -158,7 +172,11 @@ def start_stack() -> int:
     validate_start_prerequisites()
     sudo_systemctl("start", BRIDGE_SERVICE)
     sudo_systemctl("start", STACK_SERVICE)
-    wait_until_ready()
+    try:
+        wait_until_ready()
+    except RuntimeError:
+        sudo_systemctl("stop", STACK_SERVICE)
+        raise
     return print_status()
 
 
@@ -172,7 +190,11 @@ def restart_stack() -> int:
     validate_start_prerequisites()
     sudo_systemctl("restart", BRIDGE_SERVICE)
     sudo_systemctl("restart", STACK_SERVICE)
-    wait_until_ready()
+    try:
+        wait_until_ready()
+    except RuntimeError:
+        sudo_systemctl("stop", STACK_SERVICE)
+        raise
     return print_status()
 
 

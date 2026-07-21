@@ -2,9 +2,10 @@ from pathlib import Path
 
 from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
+from launch.events import Shutdown
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -181,8 +182,6 @@ def generate_launch_description():
         executable="standby_manager",
         name="zyarm_standby_manager",
         output="screen",
-        respawn=True,
-        respawn_delay=2.0,
         parameters=[
             {
                 "controller_manager": "/zyarm_x1_standard_controller_manager",
@@ -207,9 +206,32 @@ def generate_launch_description():
         )
     )
 
+    shutdown_on_controller_manager_exit = RegisterEventHandler(
+        OnProcessExit(
+            target_action=controller_manager,
+            on_exit=[
+                EmitEvent(
+                    event=Shutdown(reason="ros2_control_node exited")
+                )
+            ],
+        )
+    )
+    shutdown_on_standby_manager_exit = RegisterEventHandler(
+        OnProcessExit(
+            target_action=standby_manager,
+            on_exit=[
+                EmitEvent(
+                    event=Shutdown(reason="standby_manager exited")
+                )
+            ],
+        )
+    )
+
     return LaunchDescription(
         [
             *_real_hardware_launch_arguments(),
+            shutdown_on_controller_manager_exit,
+            shutdown_on_standby_manager_exit,
             controller_manager,
             robot_state_publisher,
             joint_state_broadcaster_spawner,

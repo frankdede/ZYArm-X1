@@ -70,6 +70,8 @@ def test_real_ros2_control_bringup_does_not_start_adapter():
     assert "zyarm_x1_standard_real_controllers.yaml" in source
     assert "zyarm_control_adapter" not in source
     assert "joint_io_fast" not in source
+    assert "shutdown_on_controller_manager_exit" in source
+    assert "shutdown_on_standby_manager_exit" in source
 
 
 def test_x1_plus_real_ros2_control_bringup_does_not_start_adapter():
