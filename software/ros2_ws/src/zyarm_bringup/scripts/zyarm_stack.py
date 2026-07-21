@@ -168,12 +168,36 @@ def wait_until_ready(timeout: float = 30.0) -> None:
     raise RuntimeError("ZYArm stack did not become ready within 30 seconds")
 
 
+def initialize_fallback_parameters() -> None:
+    request = (
+        "{parameters: ["
+        "{name: arm_controller.fallback_controllers, "
+        "value: {type: 9, string_array_value: []}}, "
+        "{name: gripper_controller.fallback_controllers, "
+        "value: {type: 9, string_array_value: []}}, "
+        "{name: joint_state_broadcaster.fallback_controllers, "
+        "value: {type: 9, string_array_value: []}}]}"
+    )
+    result = ros_command(
+        "ros2 service call "
+        "/zyarm_x1_standard_controller_manager/set_parameters "
+        f"rcl_interfaces/srv/SetParameters '{request}'",
+        timeout=8,
+    )
+    if result.returncode != 0 or result.stdout.count("successful=True") != 3:
+        raise RuntimeError(
+            "Failed to initialize controller fallback parameters: "
+            + result.stdout.strip()
+        )
+
+
 def start_stack() -> int:
     validate_start_prerequisites()
     sudo_systemctl("start", BRIDGE_SERVICE)
     sudo_systemctl("start", STACK_SERVICE)
     try:
         wait_until_ready()
+        initialize_fallback_parameters()
     except RuntimeError:
         sudo_systemctl("stop", STACK_SERVICE)
         raise
@@ -192,6 +216,7 @@ def restart_stack() -> int:
     sudo_systemctl("restart", STACK_SERVICE)
     try:
         wait_until_ready()
+        initialize_fallback_parameters()
     except RuntimeError:
         sudo_systemctl("stop", STACK_SERVICE)
         raise
