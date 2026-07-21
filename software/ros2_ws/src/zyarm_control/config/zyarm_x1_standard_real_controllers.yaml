@@ -5,12 +5,15 @@ zyarm_x1_standard_controller_manager:
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
+      fallback_controllers: []
 
     arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
+      fallback_controllers: []
 
     gripper_controller:
       type: joint_trajectory_controller/JointTrajectoryController
+      fallback_controllers: []
 
 arm_controller:
   ros__parameters:
