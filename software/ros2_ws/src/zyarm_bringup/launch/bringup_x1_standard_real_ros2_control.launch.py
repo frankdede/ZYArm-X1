@@ -141,38 +141,14 @@ def generate_launch_description():
         parameters=[{"robot_description": robot_description}],
     )
 
-    joint_state_broadcaster_spawner = Node(
+    controllers_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        name="zyarm_x1_standard_joint_state_broadcaster_spawner",
+        name="zyarm_x1_standard_controllers_spawner",
         output="screen",
         arguments=[
             "joint_state_broadcaster",
-            "--controller-manager",
-            "/zyarm_x1_standard_controller_manager",
-            "--inactive",
-        ],
-    )
-
-    arm_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        name="zyarm_x1_standard_arm_controller_spawner",
-        output="screen",
-        arguments=[
             "arm_controller",
-            "--controller-manager",
-            "/zyarm_x1_standard_controller_manager",
-            "--inactive",
-        ],
-    )
-
-    gripper_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        name="zyarm_x1_standard_gripper_controller_spawner",
-        output="screen",
-        arguments=[
             "gripper_controller",
             "--controller-manager",
             "/zyarm_x1_standard_controller_manager",
@@ -207,13 +183,6 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("use_rviz")),
     )
 
-    delay_arm_controller_until_jsb = RegisterEventHandler(
-        OnProcessExit(
-            target_action=joint_state_broadcaster_spawner,
-            on_exit=[arm_controller_spawner, gripper_controller_spawner],
-        )
-    )
-
     shutdown_on_controller_manager_exit = RegisterEventHandler(
         OnProcessExit(
             target_action=controller_manager,
@@ -242,8 +211,7 @@ def generate_launch_description():
             shutdown_on_standby_manager_exit,
             controller_manager,
             robot_state_publisher,
-            joint_state_broadcaster_spawner,
-            delay_arm_controller_until_jsb,
+            controllers_spawner,
             standby_manager,
             rviz,
         ]

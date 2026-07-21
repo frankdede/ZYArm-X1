@@ -308,9 +308,11 @@ class StandbyManager(Node):
                 return response
 
             active_controllers = self._active_controllers()
-            controllers_to_activate = (
-                active_controllers or self._inactive_managed_controllers()
-            )
+            controllers_to_activate = active_controllers + [
+                name
+                for name in self._inactive_managed_controllers()
+                if name not in active_controllers
+            ]
             if active_controllers:
                 self._switch(deactivate=active_controllers)
 

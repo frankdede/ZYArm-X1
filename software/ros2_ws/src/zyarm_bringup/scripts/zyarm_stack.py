@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 import subprocess
 import sys
@@ -16,6 +17,10 @@ ROS_SETUP = Path("/opt/ros/jazzy/setup.bash")
 WORKSPACE_SETUP = Path("/home/frank/ZYArm-X1/software/ros2_ws/install/setup.bash")
 SERIAL_DEVICE = Path("/dev/ttyUSB0")
 CAMERA_DEVICE = Path("/dev/v4l/by-id/usb-XHH-260128-A_2M-video-index0")
+STACK_PROBE = Path(
+    "/home/frank/ZYArm-X1/software/ros2_ws/install/zyarm_bringup/"
+    "lib/zyarm_bringup/stack_probe"
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -95,39 +100,27 @@ def service_state(service: str) -> str:
 def query_stack_interfaces(
     timeout: int = 8,
 ) -> tuple[subprocess.CompletedProcess, bool, bool, bool, bool]:
-    controllers = ros_command(
-        "ros2 control list_controllers -c /zyarm_x1_standard_controller_manager",
-        timeout=timeout,
+    probe = ros_command(
+        f"python3 {STACK_PROBE} --timeout {max(timeout, 1)}",
+        timeout=max(timeout, 1) + 3,
     )
-    expected_controllers = (
-        "arm_controller",
-        "gripper_controller",
-        "joint_state_broadcaster",
+    try:
+        payload = json.loads(probe.stdout.splitlines()[-1])
+    except (IndexError, json.JSONDecodeError):
+        payload = {}
+    controller_states = payload.get("controller_states", {})
+    controller_output = "\n".join(
+        f"{name}: {state}" for name, state in sorted(controller_states.items())
     )
-    controller_states = {
-        line.split()[0]: line.split()[-1]
-        for line in controllers.stdout.splitlines()
-        if len(line.split()) >= 2
-    }
-    controllers_available = controllers.returncode == 0 and all(
-        controller_states.get(name) in {"active", "inactive"}
-        for name in expected_controllers
+    controllers = subprocess.CompletedProcess(
+        args=probe.args,
+        returncode=probe.returncode,
+        stdout=controller_output or probe.stdout,
     )
-    controllers_active = controllers_available and all(
-        controller_states.get(name) == "active" for name in expected_controllers
-    )
-    topics = ros_command(
-        "ros2 topic list | grep -E '^/camera/image/compressed$'",
-        timeout=timeout,
-    )
-    video_ready = topics.returncode == 0 and bool(topics.stdout.strip())
-    modes = ros_command(
-        "for service in standby unload resume reset; do "
-        "ros2 service info /zyarm/$service | grep -q 'Services count: 1' || exit 1; "
-        "done",
-        timeout=timeout,
-    )
-    modes_ready = modes.returncode == 0
+    controllers_available = bool(payload.get("controllers_ready", False))
+    controllers_active = bool(payload.get("controllers_active", False))
+    modes_ready = bool(payload.get("services_ready", False))
+    video_ready = bool(payload.get("video_ready", False))
     return (
         controllers,
         controllers_available,
@@ -177,21 +170,16 @@ def print_status() -> int:
 
 
 def wait_until_ready(timeout: float = 30.0) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if service_state(STACK_SERVICE) != "active":
-            time.sleep(0.5)
-            continue
+    if service_state(STACK_SERVICE) == "active":
         (
             _,
             controllers_available,
             _,
             modes_ready,
             video_ready,
-        ) = query_stack_interfaces(timeout=4)
+        ) = query_stack_interfaces(timeout=round(timeout))
         if controllers_available and modes_ready and video_ready:
             return
-        time.sleep(0.5)
     raise RuntimeError("ZYArm stack did not become ready within 30 seconds")
 
 
@@ -220,15 +208,18 @@ def initialize_fallback_parameters() -> None:
 
 def start_stack() -> int:
     validate_start_prerequisites()
+    print("Starting Foxglove and the recovery-ready arm stack...", flush=True)
     sudo_systemctl("start", BRIDGE_SERVICE)
     sudo_systemctl("start", STACK_SERVICE)
     try:
+        print("Waiting for controllers, mode services, and video...", flush=True)
         wait_until_ready()
         initialize_fallback_parameters()
     except RuntimeError:
         sudo_systemctl("stop", STACK_SERVICE)
         raise
-    return print_status()
+    print("ZYArm stack is ready. Run 'zyarm-stack status' for details.")
+    return 0
 
 
 def stop_stack() -> int:
@@ -239,15 +230,18 @@ def stop_stack() -> int:
 
 def restart_stack() -> int:
     validate_start_prerequisites()
+    print("Restarting Foxglove and the recovery-ready arm stack...", flush=True)
     sudo_systemctl("restart", BRIDGE_SERVICE)
     sudo_systemctl("restart", STACK_SERVICE)
     try:
+        print("Waiting for controllers, mode services, and video...", flush=True)
         wait_until_ready()
         initialize_fallback_parameters()
     except RuntimeError:
         sudo_systemctl("stop", STACK_SERVICE)
         raise
-    return print_status()
+    print("ZYArm stack is ready. Run 'zyarm-stack status' for details.")
+    return 0
 
 
 def show_logs(*, follow: bool, lines: int) -> int:

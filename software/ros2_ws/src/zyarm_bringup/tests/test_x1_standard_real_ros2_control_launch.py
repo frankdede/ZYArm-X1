@@ -72,8 +72,9 @@ def test_real_ros2_control_bringup_does_not_start_adapter():
     assert "joint_io_fast" not in source
     assert "shutdown_on_controller_manager_exit" in source
     assert "shutdown_on_standby_manager_exit" in source
-    assert source.count('"--inactive"') == 3
+    assert source.count('"--inactive"') == 1
     assert '"managed_controllers"' in source
+    assert 'name="zyarm_x1_standard_controllers_spawner"' in source
 
 
 def test_x1_plus_real_ros2_control_bringup_does_not_start_adapter():

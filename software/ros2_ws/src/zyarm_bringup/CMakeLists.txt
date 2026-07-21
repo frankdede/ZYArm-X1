@@ -42,4 +42,10 @@ install(
   RENAME zyarm_stack
 )
 
+install(
+  PROGRAMS scripts/stack_probe.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME stack_probe
+)
+
 ament_package()

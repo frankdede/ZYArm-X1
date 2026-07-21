@@ -1,4 +1,6 @@
+import json
 from importlib.util import module_from_spec, spec_from_file_location
+from inspect import getsource
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -73,16 +75,19 @@ def test_recovery_ready_inactive_controllers_are_accepted(monkeypatch):
     module = _load_module()
 
     def fake_ros_command(command, timeout):
-        if "list_controllers" in command:
-            output = "\n".join(
-                [
-                    "arm_controller joint_trajectory_controller/JointTrajectoryController inactive",
-                    "gripper_controller joint_trajectory_controller/JointTrajectoryController inactive",
-                    "joint_state_broadcaster joint_state_broadcaster/JointStateBroadcaster inactive",
-                ]
-            )
-        else:
-            output = "/camera/image/compressed\n" if "topic list" in command else "ok\n"
+        output = json.dumps(
+            {
+                "controller_states": {
+                    "arm_controller": "inactive",
+                    "gripper_controller": "inactive",
+                    "joint_state_broadcaster": "inactive",
+                },
+                "controllers_ready": True,
+                "controllers_active": False,
+                "services_ready": True,
+                "video_ready": True,
+            }
+        )
         return CompletedProcess(args=command, returncode=0, stdout=output)
 
     monkeypatch.setattr(module, "ros_command", fake_ros_command)
@@ -92,6 +97,29 @@ def test_recovery_ready_inactive_controllers_are_accepted(monkeypatch):
     assert not active
     assert modes
     assert video
+
+
+def test_stack_probe_uses_one_persistent_ros_process():
+    module = _load_module()
+    source = (Path(__file__).parents[1] / "scripts" / "zyarm_stack.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "stack_probe" in source
+    assert "ThreadPoolExecutor" not in source
+    assert "ros2 service info" not in source
+    assert "print_status" not in getsource(module.start_stack)
+    assert "print_status" not in getsource(module.restart_stack)
+    assert "query_stack_interfaces(timeout=round(timeout))" in source
+
+
+def test_stack_probe_is_installed():
+    cmake = (Path(__file__).parents[1] / "CMakeLists.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "scripts/stack_probe.py" in cmake
+    assert "RENAME stack_probe" in cmake
 
 
 def test_real_controller_config_starts_hardware_inactive():
