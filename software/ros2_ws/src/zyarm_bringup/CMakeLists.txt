@@ -13,6 +13,10 @@ if(BUILD_TESTING)
     test_camera_streamer
     tests/test_camera_streamer.py
   )
+  ament_add_pytest_test(
+    test_zyarm_stack
+    tests/test_zyarm_stack.py
+  )
 endif()
 
 install(
@@ -30,6 +34,12 @@ install(
   PROGRAMS scripts/camera_streamer.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME camera_streamer
+)
+
+install(
+  PROGRAMS scripts/zyarm_stack.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME zyarm_stack
 )
 
 ament_package()

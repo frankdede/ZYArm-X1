@@ -1,5 +1,18 @@
 `zyarm_bringup` 负责把描述、仿真、硬件实例运行时和 ros2_control 控制链整理成系统入口。
 
+## 一键管理真机、Foxglove 和摄像头
+
+安装 `zyarm-stack.service` 后使用：
+
+```bash
+zyarm-stack status
+zyarm-stack start --confirm-safe
+zyarm-stack logs -f
+zyarm-stack stop --confirm-safe
+```
+
+`start`、`stop` 和 `restart` 必须显式提供 `--confirm-safe`。启动前需要支撑机械臂、清空工作区并确认人员已离开。该 service 默认不启用开机自启动；Foxglove Bridge 继续由现有 `foxglove-bridge.service` 管理。
+
 当前保留的入口：
 
 - `bringup_x1_standard_ros2_control.launch.py`
