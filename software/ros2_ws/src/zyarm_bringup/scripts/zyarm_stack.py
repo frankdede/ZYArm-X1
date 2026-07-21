@@ -170,17 +170,32 @@ def print_status() -> int:
 
 
 def wait_until_ready(timeout: float = 30.0) -> None:
-    if service_state(STACK_SERVICE) == "active":
-        (
-            _,
-            controllers_available,
-            _,
-            modes_ready,
-            video_ready,
-        ) = query_stack_interfaces(timeout=round(timeout))
-        if controllers_available and modes_ready and video_ready:
-            return
-    raise RuntimeError("ZYArm stack did not become ready within 30 seconds")
+    deadline = time.monotonic() + timeout
+    stack_state = service_state(STACK_SERVICE)
+    while stack_state != "active" and time.monotonic() < deadline:
+        time.sleep(0.25)
+        stack_state = service_state(STACK_SERVICE)
+
+    remaining = max(1, round(deadline - time.monotonic()))
+    if stack_state != "active":
+        raise RuntimeError(
+            f"ZYArm systemd service did not become active; state={stack_state}"
+        )
+
+    (
+        controllers,
+        controllers_available,
+        _,
+        modes_ready,
+        video_ready,
+    ) = query_stack_interfaces(timeout=remaining)
+    if controllers_available and modes_ready and video_ready:
+        return
+    raise RuntimeError(
+        "ZYArm ROS interfaces did not become ready; "
+        f"controllers={controllers_available}, mode_services={modes_ready}, "
+        f"video={video_ready}, probe={controllers.stdout.strip() or 'no output'}"
+    )
 
 
 def initialize_fallback_parameters() -> None:

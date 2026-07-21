@@ -110,7 +110,7 @@ def test_stack_probe_uses_one_persistent_ros_process():
     assert "ros2 service info" not in source
     assert "print_status" not in getsource(module.start_stack)
     assert "print_status" not in getsource(module.restart_stack)
-    assert "query_stack_interfaces(timeout=round(timeout))" in source
+    assert "while stack_state != \"active\"" in source
 
 
 def test_stack_probe_is_installed():
@@ -120,6 +120,32 @@ def test_stack_probe_is_installed():
 
     assert "scripts/stack_probe.py" in cmake
     assert "RENAME stack_probe" in cmake
+
+
+def test_wait_until_ready_polls_systemd_before_ros(monkeypatch):
+    module = _load_module()
+    states = iter(["activating", "activating", "active"])
+    probes = []
+
+    monkeypatch.setattr(module, "service_state", lambda _service: next(states))
+    monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        module,
+        "query_stack_interfaces",
+        lambda timeout: probes.append(timeout)
+        or (
+            CompletedProcess(args=[], returncode=0, stdout="ready"),
+            True,
+            False,
+            True,
+            True,
+        ),
+    )
+
+    module.wait_until_ready(timeout=30.0)
+
+    assert probes
+    assert probes[0] > 0
 
 
 def test_real_controller_config_starts_hardware_inactive():
